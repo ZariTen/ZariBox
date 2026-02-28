@@ -1,0 +1,396 @@
+#!/usr/bin/env bash
+# ZariBox - Declarative Distrobox manager with Nix-like feel
+# Usage: zaribox <command> [file.toml]
+
+set -euo pipefail
+
+VERSION="0.1.0"
+ZARIBOX_DIR="${HOME}/.local/share/zaribox"
+CACHE_DIR="${ZARIBOX_DIR}/cache"
+
+mkdir -p "$CACHE_DIR"
+
+# -- Colors ------------------------------------------------------------------
+RED=$'\033[0;31m'
+GRN=$'\033[0;32m'
+YLW=$'\033[0;33m'
+BLU=$'\033[0;34m'
+MAG=$'\033[0;35m'
+CYN=$'\033[0;36m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+RST=$'\033[0m'
+
+log()  { printf '%s\n' "${BLU}${BOLD}[zaribox]${RST} $*"; }
+ok()   { printf '%s\n' "${GRN}${BOLD}  ok${RST} $*"; }
+warn() { printf '%s\n' "${YLW}${BOLD}  warn${RST} $*"; }
+err()  { printf '%s\n' "${RED}${BOLD}  error${RST} $*" >&2; }
+step() { printf '%s\n' "${MAG}  ->${RST} $*"; }
+
+# -- TOML parser (minimal, no deps) ------------------------------------------
+parse_toml() {
+    local file="$1"
+    local key="$2"
+
+    grep -m1 "^${key}:" "$file" 2>/dev/null | sed 's/^[^:]*:[[:space:]]*//' | tr -d '"' | tr -d "'" || true
+}
+
+parse_toml_list() {
+    local file="$1"
+    local key="$2"
+
+    awk -v key="$key" '
+        /^[A-Za-z]/ { in_block = 0 }
+        $0 ~ "^"key":" { in_block = 1; next }
+        in_block && /^[[:space:]]*-[[:space:]]/ {
+            sub(/^[[:space:]]*-[[:space:]]*/, "")
+            gsub(/"/, "")
+            print
+        }
+    ' "$file"
+}
+
+# -- Config helpers -----------------------------------------------------------
+resolve_toml() {
+    local arg="${1:-}"
+    if [[ -n "$arg" && -f "$arg" ]]; then
+        echo "$arg"
+    elif [[ -n "$arg" && -f "${arg}.toml" ]]; then
+        echo "${arg}.toml"
+    else
+        local found
+        found=$(find . -maxdepth 1 -name "*.toml" | head -1)
+        if [[ -z "$found" ]]; then
+            err "No .toml file found. Pass one explicitly or run from a directory containing one."
+            exit 1
+        fi
+        echo "$found"
+    fi
+}
+
+container_name_from() {
+    local toml="$1"
+    local name
+    name=$(parse_toml "$toml" "Name")
+    if [[ -z "$name" ]]; then
+        name=$(basename "$toml" .toml)
+    fi
+    echo "$name"
+}
+
+hash_file() {
+    sha256sum "$1" | awk '{print $1}'
+}
+
+cache_path() {
+    local name="$1"
+    echo "${CACHE_DIR}/${name}.hash"
+}
+
+saved_hash() {
+    local name="$1"
+    local path
+    path=$(cache_path "$name")
+    [[ -f "$path" ]] && cat "$path" || echo ""
+}
+
+save_hash() {
+    local name="$1"
+    local hash="$2"
+    echo "$hash" > "$(cache_path "$name")"
+}
+
+container_exists() {
+    distrobox list 2>/dev/null | grep -q "^| $1 " || \
+    distrobox list 2>/dev/null | grep -qw "$1"
+}
+
+# -- Package manager detection ------------------------------------------------
+detect_pkgmgr() {
+    local image="$1"
+    case "$image" in
+        arch*|manjaro*|endeavour*)  echo "pacman" ;;
+        ubuntu*|debian*|pop*|mint*) echo "apt" ;;
+        fedora*|centos*|rhel*)      echo "dnf" ;;
+        opensuse*|suse*)            echo "zypper" ;;
+        alpine*)                    echo "apk" ;;
+        void*)                      echo "xbps" ;;
+        *)                          echo "auto" ;;
+    esac
+}
+
+install_cmd() {
+    local mgr="$1"
+    case "$mgr" in
+        pacman)  echo "sudo pacman -Syu --noconfirm" ;;
+        apt)     echo "sudo apt-get install -y" ;;
+        dnf)     echo "sudo dnf install -y" ;;
+        zypper)  echo "sudo zypper install -y" ;;
+        apk)     echo "sudo apk add" ;;
+        xbps)    echo "sudo xbps-install -y" ;;
+        *)       echo "sudo apt-get install -y" ;;
+    esac
+}
+
+remove_cmd() {
+    local mgr="$1"
+    case "$mgr" in
+        pacman)  echo "sudo pacman -Rns --noconfirm" ;;
+        apt)     echo "sudo apt-get remove -y" ;;
+        dnf)     echo "sudo dnf remove -y" ;;
+        zypper)  echo "sudo zypper remove -y" ;;
+        apk)     echo "sudo apk del" ;;
+        xbps)    echo "sudo xbps-remove -y" ;;
+        *)       echo "sudo apt-get remove -y" ;;
+    esac
+}
+
+# -- Commands -----------------------------------------------------------------
+
+cmd_apply() {
+    local toml
+    toml=$(resolve_toml "${1:-}")
+    local name
+    name=$(container_name_from "$toml")
+    local image
+    image=$(parse_toml "$toml" "Image")
+    local home_dir
+    home_dir=$(parse_toml "$toml" "HomeDir")
+    [[ -z "$home_dir" ]] && home_dir="${HOME}/.local/share/zaribox/homes/${name}"
+    local extra_flags
+    extra_flags=$(parse_toml "$toml" "ExtraFlags")
+
+    if [[ -z "$image" ]]; then
+        err "Image field is required in $toml"
+        exit 1
+    fi
+
+    local current_hash
+    current_hash=$(hash_file "$toml")
+    local old_hash
+    old_hash=$(saved_hash "$name")
+
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYN}ZariBox apply${RST}  ${DIM}v${VERSION}${RST}"
+    printf '%s\n' "  ${DIM}config  ${RST}${toml}"
+    printf '%s\n' "  ${DIM}name    ${RST}${name}"
+    printf '%s\n' "  ${DIM}image   ${RST}${image}"
+    printf '\n'
+
+    if [[ "$current_hash" == "$old_hash" ]] && container_exists "$name"; then
+        ok "Container '${name}' is up to date -- nothing to do."
+        echo ""
+        return 0
+    fi
+
+    if container_exists "$name"; then
+        warn "Config changed -- recreating container '${name}'..."
+        step "Stopping and removing container..."
+        distrobox stop "$name" --yes 2>/dev/null || true
+        distrobox rm "$name" --force 2>/dev/null || true
+        ok "Old container removed"
+    else
+        step "Creating new container '${name}'..."
+    fi
+
+    mkdir -p "$home_dir"
+
+    local create_cmd="distrobox create --name \"$name\" --image \"$image\" --home \"$home_dir\""
+    [[ -n "$extra_flags" ]] && create_cmd+=" $extra_flags"
+
+    step "Pulling image and creating container..."
+    eval "$create_cmd"
+    ok "Container created"
+
+    local packages
+    mapfile -t packages < <(parse_toml_list "$toml" "Packages")
+
+    if [[ ${#packages[@]} -gt 0 ]]; then
+        step "Detecting package manager..."
+        local mgr
+        mgr=$(detect_pkgmgr "$image")
+        local icmd
+        icmd=$(install_cmd "$mgr")
+        step "Installing ${#packages[@]} package(s) via ${mgr}..."
+
+        distrobox enter "$name" -- true 2>/dev/null || true
+        distrobox enter "$name" -- bash -c "${icmd} ${packages[*]}"
+        ok "Packages installed: ${packages[*]}"
+    else
+        warn "No packages listed in $toml"
+    fi
+
+    local run_cmds
+    mapfile -t run_cmds < <(parse_toml_list "$toml" "Run")
+    if [[ ${#run_cmds[@]} -gt 0 ]]; then
+        step "Running post-install commands..."
+        for cmd_line in "${run_cmds[@]}"; do
+            step "  $ $cmd_line"
+            distrobox enter "$name" -- bash -c "$cmd_line"
+        done
+        ok "Post-install commands done"
+    fi
+
+    save_hash "$name" "$current_hash"
+    printf '\n'
+    ok "${BOLD}Done.${RST} Container '${name}' is ready."
+    printf '%s\n' "  ${DIM}Run:${RST}  zaribox enter ${toml}"
+    printf '\n'
+}
+
+cmd_enter() {
+    local toml
+    toml=$(resolve_toml "${1:-}")
+    local name
+    name=$(container_name_from "$toml")
+
+    if ! container_exists "$name"; then
+        warn "Container '$name' does not exist. Running apply first..."
+        cmd_apply "$toml"
+    fi
+
+    log "Entering '${name}'..."
+    exec distrobox enter "$name"
+}
+
+cmd_destroy() {
+    local toml
+    toml=$(resolve_toml "${1:-}")
+    local name
+    name=$(container_name_from "$toml")
+
+    if ! container_exists "$name"; then
+        warn "Container '${name}' does not exist."
+        return 0
+    fi
+
+    printf '%s\n' "${RED}${BOLD}This will destroy container '${name}' (home dir is preserved).${RST}"
+    read -r -p "  Confirm? [y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { log "Aborted."; return 0; }
+
+    distrobox stop "$name" --yes 2>/dev/null || true
+    distrobox rm "$name" --force
+    rm -f "$(cache_path "$name")"
+    ok "Container '${name}' destroyed. Home dir preserved."
+}
+
+cmd_status() {
+    local toml
+    toml=$(resolve_toml "${1:-}")
+    local name
+    name=$(container_name_from "$toml")
+    local current_hash
+    current_hash=$(hash_file "$toml")
+    local old_hash
+    old_hash=$(saved_hash "$name")
+
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYN}ZariBox Status${RST}"
+    printf '%s\n' "  config  : ${toml}"
+    printf '%s\n' "  name    : ${name}"
+    printf '%s\n' "  image   : $(parse_toml "$toml" "Image")"
+
+    if container_exists "$name"; then
+        printf '%s\n' "  exists  : ${GRN}yes${RST}"
+    else
+        printf '%s\n' "  exists  : ${RED}no${RST}"
+    fi
+
+    if [[ "$current_hash" == "$old_hash" ]]; then
+        printf '%s\n' "  in sync : ${GRN}yes${RST}"
+    else
+        printf '%s\n' "  in sync : ${YLW}no -- run 'zaribox apply' to sync${RST}"
+    fi
+
+    printf '%s\n' "  packages:"
+    parse_toml_list "$toml" "Packages" | while read -r pkg; do
+        printf '%s\n' "    ${DIM}-${RST} ${pkg}"
+    done
+    printf '\n'
+}
+
+cmd_list() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYN}ZariBox containers${RST}  ${DIM}(from ${CACHE_DIR})${RST}"
+    printf '\n'
+    for f in "${CACHE_DIR}"/*.hash; do
+        [[ -f "$f" ]] || continue
+        local cname
+        cname=$(basename "$f" .hash)
+        if container_exists "$cname"; then
+            printf '%s\n' "  ${GRN}+${RST}  ${cname}"
+        else
+            printf '%s\n' "  ${RED}-${RST}  ${cname}  ${DIM}(not running)${RST}"
+        fi
+    done
+    printf '\n'
+}
+
+cmd_help() {
+    cat <<EOF
+
+${BOLD}${CYN}ZariBox${RST} v${VERSION}  -- Declarative Distrobox manager
+
+${BOLD}Usage:${RST}
+  zaribox <command> [file.toml]
+
+${BOLD}Commands:${RST}
+  ${GRN}apply${RST}    [file.toml]   Sync container to match config (recreate if changed)
+  ${GRN}enter${RST}    [file.toml]   Enter the container (applies first if needed)
+  ${GRN}destroy${RST}  [file.toml]   Remove the container (home dir preserved)
+  ${GRN}status${RST}   [file.toml]   Show sync status
+  ${GRN}list${RST}                  List all ZariBox-managed containers
+  ${GRN}help${RST}                  Show this help
+
+${BOLD}Config file format (TOML-like):${RST}
+
+  ${DIM}# archbox.toml${RST}
+  Name: archbox          ${DIM}# optional, defaults to filename${RST}
+  Image: archlinux
+  HomeDir: ~/.zariboxes/arch   ${DIM}# optional${RST}
+
+  Packages:
+  - base-devel
+  - git
+  - neovim
+  - ripgrep
+
+  Run:                   ${DIM}# optional post-install commands${RST}
+  - curl -sfL https://get.example.com | sh
+
+  ExtraFlags: --nvidia   ${DIM}# optional extra distrobox flags${RST}
+
+${BOLD}Examples:${RST}
+  zaribox apply archbox.toml
+  zaribox enter archbox.toml
+  zaribox enter                ${DIM}# auto-detect .toml in cwd${RST}
+
+EOF
+}
+
+# -- Entrypoint ---------------------------------------------------------------
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    if ! command -v distrobox &>/dev/null; then
+        err "distrobox is not installed or not in PATH."
+        exit 1
+    fi
+
+    case "$cmd" in
+        apply)   cmd_apply "$@" ;;
+        enter)   cmd_enter "$@" ;;
+        destroy) cmd_destroy "$@" ;;
+        status)  cmd_status "$@" ;;
+        list)    cmd_list ;;
+        help|-h|--help) cmd_help ;;
+        *)
+            err "Unknown command: $cmd"
+            cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

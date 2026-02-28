@@ -1,0 +1,21 @@
+# archbox.toml — ZariBox config for an Arch Linux dev container
+# Run: zaribox apply archbox.toml
+
+Name: archbox
+Image: archlinux
+
+# Optional: custom home directory (persists across recreations)
+HomeDir: /home/yeulten/Documents/Archbox/
+
+Packages:
+- base-devel
+- git
+- neovim
+- starship
+
+# Optional: commands to run after package install
+# Run:
+# - chsh -s /usr/bin/zsh
+
+# Optional: extra flags passed to `distrobox create`
+ExtraFlags: --nvidia
