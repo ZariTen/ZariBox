@@ -1,5 +1,5 @@
-# archbox.toml — ZariBox config for an Arch Linux dev container
-# Run: zaribox apply archbox.toml
+# archbox.yaml — ZariBox config for an Arch Linux dev container
+# Run: zaribox apply archbox.yaml
 
 Name: archbox
 Image: archlinux
