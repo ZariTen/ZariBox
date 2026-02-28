@@ -4,6 +4,24 @@ Declarative Distrobox manager with a split layout:
 - `zaribox` (entrypoint)
 - `zaribox.d/` (modules)
 
+## Backend
+
+ZariBox uses a backend abstraction for container runtime operations.
+
+- Currently supported backend: `distrobox`
+- Selection precedence:
+	1. `ZARIBOX_BACKEND` environment variable
+	2. `Backend:` field in YAML
+	3. default `distrobox`
+
+Example:
+
+```yaml
+Name: archbox
+Backend: distrobox
+Image: archlinux
+```
+
 ## Install
 
 System-wide (default prefix `/usr/local`):

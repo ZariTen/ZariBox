@@ -37,6 +37,5 @@ container_identity_hash() {
 }
 
 container_exists() {
-    distrobox list 2>/dev/null | grep -q "^| $1 " || \
-    distrobox list 2>/dev/null | grep -qw "$1"
+    backend_container_exists "$1"
 }

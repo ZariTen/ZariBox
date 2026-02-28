@@ -9,6 +9,8 @@ for module in \
     "${SCRIPT_DIR}/zaribox.d/core.sh" \
     "${SCRIPT_DIR}/zaribox.d/yaml.sh" \
     "${SCRIPT_DIR}/zaribox.d/config.sh" \
+    "${SCRIPT_DIR}/zaribox.d/backend_distrobox.sh" \
+    "${SCRIPT_DIR}/zaribox.d/backend.sh" \
     "${SCRIPT_DIR}/zaribox.d/state.sh" \
     "${SCRIPT_DIR}/zaribox.d/pkgmgr.sh" \
     "${SCRIPT_DIR}/zaribox.d/commands.sh"

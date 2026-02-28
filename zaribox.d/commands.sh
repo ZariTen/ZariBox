@@ -1,6 +1,15 @@
+require_backend_runtime() {
+    if ! backend_detect; then
+        err "${ACTIVE_BACKEND} backend is not installed or not in PATH."
+        exit 1
+    fi
+}
+
 cmd_apply() {
     local yaml
     yaml=$(resolve_yaml "${1:-}")
+    backend_use "$yaml"
+    require_backend_runtime
     local name
     name=$(container_name_from "$yaml")
     local image
@@ -45,8 +54,8 @@ cmd_apply() {
     if [[ "$needs_recreate" == true ]]; then
         if [[ "$container_is_new" == false ]]; then
             step "Stopping and removing old container..."
-            distrobox stop "$name" --yes 2>/dev/null || true
-            distrobox rm "$name" --force 2>/dev/null || true
+            backend_stop "$name" 2>/dev/null || true
+            backend_rm "$name" 2>/dev/null || true
             ok "Old container removed"
         else
             step "Creating new container '${name}'..."
@@ -54,14 +63,8 @@ cmd_apply() {
 
         mkdir -p "$home_dir"
 
-        local create_args=(distrobox create --name "$name" --image "$image" --home "$home_dir")
-        if [[ -n "$extra_flags" ]]; then
-            IFS=" " read -r -a eflags <<< "$extra_flags"
-            create_args+=("${eflags[@]}")
-        fi
-
         step "Pulling image and creating container..."
-        "${create_args[@]}"
+        backend_create "$name" "$image" "$home_dir" "$extra_flags"
         ok "Container created"
         save_container_hash "$name" "$current_id_hash"
 
@@ -73,8 +76,8 @@ cmd_apply() {
             local icmd
             icmd=$(install_cmd "$mgr")
             step "Installing ${#desired_packages[@]} package(s) via ${mgr}..."
-            distrobox enter "$name" -- true 2>/dev/null || true
-            distrobox enter "$name" -- bash -c "${icmd} ${desired_packages[*]}"
+            backend_exec "$name" true 2>/dev/null || true
+            backend_exec "$name" bash -c "${icmd} ${desired_packages[*]}"
             ok "Packages installed: ${desired_packages[*]}"
             save_packages "$name" "${desired_packages[@]}"
         else
@@ -111,7 +114,7 @@ cmd_apply() {
             local icmd
             icmd=$(install_cmd "$mgr")
             step "Installing ${#to_install[@]} new package(s): ${to_install[*]}"
-            distrobox enter "$name" -- bash -c "${icmd} ${to_install[*]}"
+            backend_exec "$name" bash -c "${icmd} ${to_install[*]}"
             ok "Installed: ${to_install[*]}"
         fi
 
@@ -119,7 +122,7 @@ cmd_apply() {
             local rcmd
             rcmd=$(remove_cmd "$mgr")
             step "Removing ${#to_remove[@]} package(s): ${to_remove[*]}"
-            distrobox enter "$name" -- bash -c "${rcmd} ${to_remove[*]}"
+            backend_exec "$name" bash -c "${rcmd} ${to_remove[*]}"
             ok "Removed: ${to_remove[*]}"
         fi
 
@@ -133,7 +136,7 @@ cmd_apply() {
             step "Running post-install commands..."
             for cmd_line in "${run_cmds[@]}"; do
                 step "  $ $cmd_line"
-                distrobox enter "$name" -- bash -c "$cmd_line"
+                backend_exec "$name" bash -c "$cmd_line"
             done
             ok "Post-install commands done"
         fi
@@ -148,6 +151,8 @@ cmd_apply() {
 cmd_enter() {
     local yaml
     yaml=$(resolve_yaml "${1:-}")
+    backend_use "$yaml"
+    require_backend_runtime
     local name
     name=$(container_name_from "$yaml")
 
@@ -157,12 +162,14 @@ cmd_enter() {
     fi
 
     log "Entering '${name}'..."
-    exec distrobox enter "$name"
+    backend_enter "$name"
 }
 
 cmd_destroy() {
     local yaml
     yaml=$(resolve_yaml "${1:-}")
+    backend_use "$yaml"
+    require_backend_runtime
     local name
     name=$(container_name_from "$yaml")
 
@@ -178,8 +185,8 @@ cmd_destroy() {
         return 0
     }
 
-    distrobox stop "$name" --yes 2>/dev/null || true
-    distrobox rm "$name" --force
+    backend_stop "$name" 2>/dev/null || true
+    backend_rm "$name"
     rm -f "$(container_hash_path "$name")" "$(packages_cache_path "$name")"
     ok "Container '${name}' destroyed. Home dir preserved."
 }
@@ -187,6 +194,8 @@ cmd_destroy() {
 cmd_status() {
     local yaml
     yaml=$(resolve_yaml "${1:-}")
+    backend_use "$yaml"
+    require_backend_runtime
     local name
     name=$(container_name_from "$yaml")
 
@@ -248,6 +257,8 @@ cmd_status() {
 }
 
 cmd_list() {
+    backend_use ""
+    require_backend_runtime
     printf '\n'
     printf '%s\n' "${BOLD}${CYN}ZariBox containers${RST}  ${DIM}(from ${CACHE_DIR})${RST}"
     printf '\n'
@@ -267,7 +278,7 @@ cmd_list() {
 cmd_help() {
     cat <<EOF
 
-${BOLD}${CYN}ZariBox${RST} v${VERSION}  -- Declarative Distrobox manager
+${BOLD}${CYN}ZariBox${RST} v${VERSION}  -- Declarative container manager
 
 ${BOLD}Usage:${RST}
   zaribox <command> [file.yaml]
@@ -286,6 +297,7 @@ ${BOLD}Config file format (YAML):${RST}
   Name: archbox          ${DIM}# optional, defaults to filename${RST}
   Image: archlinux
   HomeDir: ~/.zariboxes/arch   ${DIM}# optional${RST}
+    Backend: distrobox     ${DIM}# optional, default from env or distrobox${RST}
 
   Packages:
   - base-devel
@@ -296,7 +308,7 @@ ${BOLD}Config file format (YAML):${RST}
   Run:                   ${DIM}# optional post-install commands (only run on full recreate)${RST}
   - curl -sfL https://get.example.com | sh
 
-  ExtraFlags: --nvidia   ${DIM}# optional extra distrobox flags${RST}
+    ExtraFlags: --nvidia   ${DIM}# optional extra backend create flags${RST}
 
 ${BOLD}Examples:${RST}
   zaribox apply archbox.yaml
@@ -309,11 +321,6 @@ EOF
 main() {
     local cmd="${1:-help}"
     shift || true
-
-    if ! command -v distrobox &>/dev/null; then
-        err "distrobox is not installed or not in PATH."
-        exit 1
-    fi
 
     case "$cmd" in
         apply)   cmd_apply "$@" ;;
