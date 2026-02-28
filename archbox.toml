@@ -12,10 +12,12 @@ Packages:
 - git
 - neovim
 - starship
+- fish
 
 # Optional: commands to run after package install
-# Run:
-# - chsh -s /usr/bin/zsh
+Run:
+- rm -rf ~/yay && git clone https://aur.archlinux.org/yay-bin.git ~/yay && cd ~/yay && makepkg -si --noconfirm
+- echo 'exec fish' >> ~/.bashrc
 
 # Optional: extra flags passed to `distrobox create`
 ExtraFlags: --nvidia

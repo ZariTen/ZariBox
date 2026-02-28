@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 ZARIBOX_DIR="${HOME}/.local/share/zaribox"
 CACHE_DIR="${ZARIBOX_DIR}/cache"
 
@@ -78,26 +78,37 @@ container_name_from() {
     echo "$name"
 }
 
-hash_file() {
-    sha256sum "$1" | awk '{print $1}'
+# -- Cache helpers ------------------------------------------------------------
+
+container_hash_path() { echo "${CACHE_DIR}/${1}.container.hash"; }
+packages_cache_path()  { echo "${CACHE_DIR}/${1}.packages"; }
+
+saved_container_hash() {
+    local p; p=$(container_hash_path "$1")
+    [[ -f "$p" ]] && cat "$p" || echo ""
 }
 
-cache_path() {
-    local name="$1"
-    echo "${CACHE_DIR}/${name}.hash"
+save_container_hash() {
+    echo "$2" > "$(container_hash_path "$1")"
 }
 
-saved_hash() {
-    local name="$1"
-    local path
-    path=$(cache_path "$name")
-    [[ -f "$path" ]] && cat "$path" || echo ""
+saved_packages() {
+    local p; p=$(packages_cache_path "$1")
+    [[ -f "$p" ]] && cat "$p" || echo ""
 }
 
-save_hash() {
-    local name="$1"
-    local hash="$2"
-    echo "$hash" > "$(cache_path "$name")"
+save_packages() {
+    local name="$1"; shift
+    printf '%s\n' "$@" | sort > "$(packages_cache_path "$name")"
+}
+
+container_identity_hash() {
+    local toml="$1"
+    local image home_dir extra_flags
+    image=$(parse_toml "$toml" "Image")
+    home_dir=$(parse_toml "$toml" "HomeDir")
+    extra_flags=$(parse_toml "$toml" "ExtraFlags")
+    printf '%s\n%s\n%s\n' "$image" "$home_dir" "$extra_flags" | sha256sum | awk '{print $1}'
 }
 
 container_exists() {
@@ -165,10 +176,13 @@ cmd_apply() {
         exit 1
     fi
 
-    local current_hash
-    current_hash=$(hash_file "$toml")
-    local old_hash
-    old_hash=$(saved_hash "$name")
+    local current_id_hash
+    current_id_hash=$(container_identity_hash "$toml")
+    local old_id_hash
+    old_id_hash=$(saved_container_hash "$name")
+
+    local desired_packages=()
+    mapfile -t desired_packages < <(parse_toml_list "$toml" "Packages")
 
     printf '\n'
     printf '%s\n' "${BOLD}${CYN}ZariBox apply${RST}  ${DIM}v${VERSION}${RST}"
@@ -177,61 +191,107 @@ cmd_apply() {
     printf '%s\n' "  ${DIM}image   ${RST}${image}"
     printf '\n'
 
-    if [[ "$current_hash" == "$old_hash" ]] && container_exists "$name"; then
-        ok "Container '${name}' is up to date -- nothing to do."
-        echo ""
-        return 0
+    local needs_recreate=false
+    local container_is_new=false
+
+    if ! container_exists "$name"; then
+        container_is_new=true
+        needs_recreate=true
+    elif [[ "$current_id_hash" != "$old_id_hash" ]]; then
+        warn "Container config changed (Image/HomeDir/ExtraFlags) -- recreating '${name}'..."
+        needs_recreate=true
     fi
 
-    if container_exists "$name"; then
-        warn "Config changed -- recreating container '${name}'..."
-        step "Stopping and removing container..."
-        distrobox stop "$name" --yes 2>/dev/null || true
-        distrobox rm "$name" --force 2>/dev/null || true
-        ok "Old container removed"
+    if [[ "$needs_recreate" == true ]]; then
+        if [[ "$container_is_new" == false ]]; then
+            step "Stopping and removing old container..."
+            distrobox stop "$name" --yes 2>/dev/null || true
+            distrobox rm "$name" --force 2>/dev/null || true
+            ok "Old container removed"
+        else
+            step "Creating new container '${name}'..."
+        fi
+
+        mkdir -p "$home_dir"
+
+        local create_cmd="distrobox create --name \"$name\" --image \"$image\" --home \"$home_dir\""
+        [[ -n "$extra_flags" ]] && create_cmd+=" $extra_flags"
+
+        step "Pulling image and creating container..."
+        eval "$create_cmd"
+        ok "Container created"
+        save_container_hash "$name" "$current_id_hash"
+
+        save_packages "$name"  # empty
+
+        if [[ ${#desired_packages[@]} -gt 0 ]]; then
+            local mgr; mgr=$(detect_pkgmgr "$image")
+            local icmd; icmd=$(install_cmd "$mgr")
+            step "Installing ${#desired_packages[@]} package(s) via ${mgr}..."
+            distrobox enter "$name" -- true 2>/dev/null || true
+            distrobox enter "$name" -- bash -c "${icmd} ${desired_packages[*]}"
+            ok "Packages installed: ${desired_packages[*]}"
+            save_packages "$name" "${desired_packages[@]}"
+        else
+            warn "No packages listed in $toml"
+        fi
+
     else
-        step "Creating new container '${name}'..."
+        ok "Container '${name}' is up to date -- checking packages..."
+
+        local old_pkgs_sorted new_pkgs_sorted
+        old_pkgs_sorted=$(saved_packages "$name" | sort)
+        new_pkgs_sorted=$(printf '%s\n' "${desired_packages[@]}" | sort)
+
+        local to_install=()
+        local to_remove=()
+
+        while IFS= read -r pkg; do
+            [[ -n "$pkg" ]] && to_install+=("$pkg")
+        done < <(comm -23 <(echo "$new_pkgs_sorted") <(echo "$old_pkgs_sorted"))
+
+        while IFS= read -r pkg; do
+            [[ -n "$pkg" ]] && to_remove+=("$pkg")
+        done < <(comm -23 <(echo "$old_pkgs_sorted") <(echo "$new_pkgs_sorted"))
+
+        if [[ ${#to_install[@]} -eq 0 && ${#to_remove[@]} -eq 0 ]]; then
+            ok "Packages are in sync -- nothing to do."
+            printf '\n'
+            return 0
+        fi
+
+        local mgr; mgr=$(detect_pkgmgr "$image")
+
+        if [[ ${#to_install[@]} -gt 0 ]]; then
+            local icmd; icmd=$(install_cmd "$mgr")
+            step "Installing ${#to_install[@]} new package(s): ${to_install[*]}"
+            distrobox enter "$name" -- bash -c "${icmd} ${to_install[*]}"
+            ok "Installed: ${to_install[*]}"
+        fi
+
+        if [[ ${#to_remove[@]} -gt 0 ]]; then
+            local rcmd; rcmd=$(remove_cmd "$mgr")
+            step "Removing ${#to_remove[@]} package(s): ${to_remove[*]}"
+            distrobox enter "$name" -- bash -c "${rcmd} ${to_remove[*]}"
+            ok "Removed: ${to_remove[*]}"
+        fi
+
+        save_packages "$name" "${desired_packages[@]}"
     fi
 
-    mkdir -p "$home_dir"
-
-    local create_cmd="distrobox create --name \"$name\" --image \"$image\" --home \"$home_dir\""
-    [[ -n "$extra_flags" ]] && create_cmd+=" $extra_flags"
-
-    step "Pulling image and creating container..."
-    eval "$create_cmd"
-    ok "Container created"
-
-    local packages
-    mapfile -t packages < <(parse_toml_list "$toml" "Packages")
-
-    if [[ ${#packages[@]} -gt 0 ]]; then
-        step "Detecting package manager..."
-        local mgr
-        mgr=$(detect_pkgmgr "$image")
-        local icmd
-        icmd=$(install_cmd "$mgr")
-        step "Installing ${#packages[@]} package(s) via ${mgr}..."
-
-        distrobox enter "$name" -- true 2>/dev/null || true
-        distrobox enter "$name" -- bash -c "${icmd} ${packages[*]}"
-        ok "Packages installed: ${packages[*]}"
-    else
-        warn "No packages listed in $toml"
+    if [[ "$needs_recreate" == true ]]; then
+        local run_cmds=()
+        mapfile -t run_cmds < <(parse_toml_list "$toml" "Run")
+        if [[ ${#run_cmds[@]} -gt 0 ]]; then
+            step "Running post-install commands..."
+            for cmd_line in "${run_cmds[@]}"; do
+                step "  $ $cmd_line"
+                distrobox enter "$name" -- bash -c "$cmd_line"
+            done
+            ok "Post-install commands done"
+        fi
     fi
 
-    local run_cmds
-    mapfile -t run_cmds < <(parse_toml_list "$toml" "Run")
-    if [[ ${#run_cmds[@]} -gt 0 ]]; then
-        step "Running post-install commands..."
-        for cmd_line in "${run_cmds[@]}"; do
-            step "  $ $cmd_line"
-            distrobox enter "$name" -- bash -c "$cmd_line"
-        done
-        ok "Post-install commands done"
-    fi
-
-    save_hash "$name" "$current_hash"
     printf '\n'
     ok "${BOLD}Done.${RST} Container '${name}' is ready."
     printf '%s\n' "  ${DIM}Run:${RST}  zaribox enter ${toml}"
@@ -270,7 +330,7 @@ cmd_destroy() {
 
     distrobox stop "$name" --yes 2>/dev/null || true
     distrobox rm "$name" --force
-    rm -f "$(cache_path "$name")"
+    rm -f "$(container_hash_path "$name")" "$(packages_cache_path "$name")"
     ok "Container '${name}' destroyed. Home dir preserved."
 }
 
@@ -279,30 +339,51 @@ cmd_status() {
     toml=$(resolve_toml "${1:-}")
     local name
     name=$(container_name_from "$toml")
-    local current_hash
-    current_hash=$(hash_file "$toml")
-    local old_hash
-    old_hash=$(saved_hash "$name")
+
+    local current_id_hash
+    current_id_hash=$(container_identity_hash "$toml")
+    local old_id_hash
+    old_id_hash=$(saved_container_hash "$name")
+
+    local desired_packages=()
+    mapfile -t desired_packages < <(parse_toml_list "$toml" "Packages")
+    local old_pkgs_sorted new_pkgs_sorted
+    old_pkgs_sorted=$(saved_packages "$name" | sort)
+    new_pkgs_sorted=$(printf '%s\n' "${desired_packages[@]}" | sort)
 
     printf '\n'
     printf '%s\n' "${BOLD}${CYN}ZariBox Status${RST}"
-    printf '%s\n' "  config  : ${toml}"
-    printf '%s\n' "  name    : ${name}"
-    printf '%s\n' "  image   : $(parse_toml "$toml" "Image")"
+    printf '%s\n' "  config   : ${toml}"
+    printf '%s\n' "  name     : ${name}"
+    printf '%s\n' "  image    : $(parse_toml "$toml" "Image")"
 
     if container_exists "$name"; then
-        printf '%s\n' "  exists  : ${GRN}yes${RST}"
+        printf '%s\n' "  exists   : ${GRN}yes${RST}"
     else
-        printf '%s\n' "  exists  : ${RED}no${RST}"
+        printf '%s\n' "  exists   : ${RED}no${RST}"
     fi
 
-    if [[ "$current_hash" == "$old_hash" ]]; then
-        printf '%s\n' "  in sync : ${GRN}yes${RST}"
+    if [[ "$current_id_hash" == "$old_id_hash" ]]; then
+        printf '%s\n' "  container: ${GRN}in sync${RST}"
     else
-        printf '%s\n' "  in sync : ${YLW}no -- run 'zaribox apply' to sync${RST}"
+        printf '%s\n' "  container: ${YLW}changed -- will recreate on apply${RST}"
     fi
 
-    printf '%s\n' "  packages:"
+    local to_install=() to_remove=()
+    while IFS= read -r pkg; do [[ -n "$pkg" ]] && to_install+=("$pkg"); done \
+        < <(comm -23 <(echo "$new_pkgs_sorted") <(echo "$old_pkgs_sorted"))
+    while IFS= read -r pkg; do [[ -n "$pkg" ]] && to_remove+=("$pkg"); done \
+        < <(comm -23 <(echo "$old_pkgs_sorted") <(echo "$new_pkgs_sorted"))
+
+    if [[ ${#to_install[@]} -eq 0 && ${#to_remove[@]} -eq 0 ]]; then
+        printf '%s\n' "  packages : ${GRN}in sync${RST}"
+    else
+        printf '%s\n' "  packages : ${YLW}drift detected${RST}"
+        for p in "${to_install[@]}"; do printf '%s\n' "    ${GRN}+ ${p}${RST}  ${DIM}(to install)${RST}"; done
+        for p in "${to_remove[@]}";  do printf '%s\n' "    ${RED}- ${p}${RST}  ${DIM}(to remove)${RST}"; done
+    fi
+
+    printf '%s\n' "  packages :"
     parse_toml_list "$toml" "Packages" | while read -r pkg; do
         printf '%s\n' "    ${DIM}-${RST} ${pkg}"
     done
@@ -313,10 +394,10 @@ cmd_list() {
     printf '\n'
     printf '%s\n' "${BOLD}${CYN}ZariBox containers${RST}  ${DIM}(from ${CACHE_DIR})${RST}"
     printf '\n'
-    for f in "${CACHE_DIR}"/*.hash; do
+    for f in "${CACHE_DIR}"/*.container.hash; do
         [[ -f "$f" ]] || continue
         local cname
-        cname=$(basename "$f" .hash)
+        cname=$(basename "$f" .container.hash)
         if container_exists "$cname"; then
             printf '%s\n' "  ${GRN}+${RST}  ${cname}"
         else
@@ -335,10 +416,10 @@ ${BOLD}Usage:${RST}
   zaribox <command> [file.toml]
 
 ${BOLD}Commands:${RST}
-  ${GRN}apply${RST}    [file.toml]   Sync container to match config (recreate if changed)
+  ${GRN}apply${RST}    [file.toml]   Sync container to match config
   ${GRN}enter${RST}    [file.toml]   Enter the container (applies first if needed)
   ${GRN}destroy${RST}  [file.toml]   Remove the container (home dir preserved)
-  ${GRN}status${RST}   [file.toml]   Show sync status
+  ${GRN}status${RST}   [file.toml]   Show sync status with package drift
   ${GRN}list${RST}                  List all ZariBox-managed containers
   ${GRN}help${RST}                  Show this help
 
@@ -355,7 +436,7 @@ ${BOLD}Config file format (TOML-like):${RST}
   - neovim
   - ripgrep
 
-  Run:                   ${DIM}# optional post-install commands${RST}
+  Run:                   ${DIM}# optional post-install commands (only run on full recreate)${RST}
   - curl -sfL https://get.example.com | sh
 
   ExtraFlags: --nvidia   ${DIM}# optional extra distrobox flags${RST}
