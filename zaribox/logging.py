@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from typing import TextIO
 
 RED = "\033[0;31m"
 GRN = "\033[0;32m"
@@ -13,7 +14,7 @@ DIM = "\033[2m"
 RST = "\033[0m"
 
 
-def _print(message: str, *, stream: object = sys.stdout) -> None:
+def _print(message: str, *, stream: TextIO = sys.stdout) -> None:
     print(message, file=stream)
 
 
