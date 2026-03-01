@@ -4,15 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zaribox"
-version = "0.1.2"
+dynamic = ["version"]
 description = "Declarative Distrobox manager"
 requires-python = ">=3.10"
-dependencies = [
-  "PyYAML>=6.0",
-]
 
 [project.scripts]
-zaribox = "zaribox_py.cli:main"
+zaribox = "zaribox.cli:main"
 
 [tool.setuptools]
-packages = ["zaribox_py", "zaribox_py.backends", "zaribox_py.commands"]
+
+[tool.setuptools.packages.find]
+include = ["zaribox", "zaribox.*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "zaribox.__version__"}
