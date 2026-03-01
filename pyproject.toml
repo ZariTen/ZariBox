@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zaribox"
+version = "0.1.2"
+description = "Declarative Distrobox manager"
+requires-python = ">=3.10"
+dependencies = [
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+zaribox = "zaribox_py.cli:main"
+
+[tool.setuptools]
+packages = ["zaribox_py", "zaribox_py.backends", "zaribox_py.commands"]
