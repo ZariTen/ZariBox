@@ -1,6 +1,25 @@
 from __future__ import annotations
 
 
+INSTALL_COMMANDS: dict[str, str] = {
+    "pacman": 'pacman -Syu --noconfirm "$@"',
+    "apt": 'apt-get install -y "$@"',
+    "dnf": 'dnf install -y "$@"',
+    "zypper": 'zypper install -y "$@"',
+    "apk": 'apk add "$@"',
+    "xbps": 'xbps-install -y "$@"',
+}
+
+REMOVE_COMMANDS: dict[str, str] = {
+    "pacman": 'pacman -Rns --noconfirm "$@"',
+    "apt": 'apt-get remove -y "$@"',
+    "dnf": 'dnf remove -y "$@"',
+    "zypper": 'zypper remove -y "$@"',
+    "apk": 'apk del "$@"',
+    "xbps": 'xbps-remove -y "$@"',
+}
+
+
 def detect_pkgmgr(image: str) -> str:
     image_name = image.lower()
     if image_name.startswith(("arch", "manjaro", "endeavour")):
@@ -19,32 +38,8 @@ def detect_pkgmgr(image: str) -> str:
 
 
 def install_cmd(mgr: str) -> str:
-    if mgr == "pacman":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo pacman -Syu --noconfirm "$@"; else pacman -Syu --noconfirm "$@"; fi'
-    if mgr == "apt":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo apt-get install -y "$@"; else apt-get install -y "$@"; fi'
-    if mgr == "dnf":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo dnf install -y "$@"; else dnf install -y "$@"; fi'
-    if mgr == "zypper":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo zypper install -y "$@"; else zypper install -y "$@"; fi'
-    if mgr == "apk":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo apk add "$@"; else apk add "$@"; fi'
-    if mgr == "xbps":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo xbps-install -y "$@"; else xbps-install -y "$@"; fi'
-    return 'if command -v sudo >/dev/null 2>&1; then sudo apt-get install -y "$@"; else apt-get install -y "$@"; fi'
+    return INSTALL_COMMANDS.get(mgr, INSTALL_COMMANDS["apt"])
 
 
 def remove_cmd(mgr: str) -> str:
-    if mgr == "pacman":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo pacman -Rns --noconfirm "$@"; else pacman -Rns --noconfirm "$@"; fi'
-    if mgr == "apt":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo apt-get remove -y "$@"; else apt-get remove -y "$@"; fi'
-    if mgr == "dnf":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo dnf remove -y "$@"; else dnf remove -y "$@"; fi'
-    if mgr == "zypper":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo zypper remove -y "$@"; else zypper remove -y "$@"; fi'
-    if mgr == "apk":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo apk del "$@"; else apk del "$@"; fi'
-    if mgr == "xbps":
-        return 'if command -v sudo >/dev/null 2>&1; then sudo xbps-remove -y "$@"; else xbps-remove -y "$@"; fi'
-    return 'if command -v sudo >/dev/null 2>&1; then sudo apt-get remove -y "$@"; else apt-get remove -y "$@"; fi'
+    return REMOVE_COMMANDS.get(mgr, REMOVE_COMMANDS["apt"])
