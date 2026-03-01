@@ -1,5 +1,7 @@
 # ZariBox
 
+![ZariBox](zaribox.svg)
+
 Declarative Distrobox manager with a split layout:
 - `zaribox` (entrypoint)
 - `zaribox.d/` (modules)
