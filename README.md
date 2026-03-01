@@ -8,7 +8,7 @@ Declarative Distrobox manager with a split layout:
 
 ZariBox uses a backend abstraction for container runtime operations.
 
-- Currently supported backend: `distrobox`
+- Currently supported backends: `distrobox`, `podman`
 - Selection precedence:
 	1. `ZARIBOX_BACKEND` environment variable
 	2. `Backend:` field in YAML
@@ -18,7 +18,7 @@ Example:
 
 ```yaml
 Name: archbox
-Backend: distrobox
+Backend: podman
 Image: archlinux
 ```
 

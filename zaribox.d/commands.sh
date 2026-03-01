@@ -77,7 +77,7 @@ cmd_apply() {
             icmd=$(install_cmd "$mgr")
             step "Installing ${#desired_packages[@]} package(s) via ${mgr}..."
             backend_exec "$name" true 2>/dev/null || true
-            backend_exec "$name" bash -c "${icmd} ${desired_packages[*]}"
+            backend_exec "$name" bash -c "$icmd" _ "${desired_packages[@]}"
             ok "Packages installed: ${desired_packages[*]}"
             save_packages "$name" "${desired_packages[@]}"
         else
@@ -114,7 +114,7 @@ cmd_apply() {
             local icmd
             icmd=$(install_cmd "$mgr")
             step "Installing ${#to_install[@]} new package(s): ${to_install[*]}"
-            backend_exec "$name" bash -c "${icmd} ${to_install[*]}"
+            backend_exec "$name" bash -c "$icmd" _ "${to_install[@]}"
             ok "Installed: ${to_install[*]}"
         fi
 
@@ -122,7 +122,7 @@ cmd_apply() {
             local rcmd
             rcmd=$(remove_cmd "$mgr")
             step "Removing ${#to_remove[@]} package(s): ${to_remove[*]}"
-            backend_exec "$name" bash -c "${rcmd} ${to_remove[*]}"
+            backend_exec "$name" bash -c "$rcmd" _ "${to_remove[@]}"
             ok "Removed: ${to_remove[*]}"
         fi
 
@@ -133,10 +133,12 @@ cmd_apply() {
         local run_cmds=()
         mapfile -t run_cmds < <(parse_yaml_list "$yaml" "Run")
         if [[ ${#run_cmds[@]} -gt 0 ]]; then
+            step "Normalizing home directory ownership for user commands..."
+            backend_fix_home_permissions "$name" "$home_dir"
             step "Running post-install commands..."
             for cmd_line in "${run_cmds[@]}"; do
                 step "  $ $cmd_line"
-                backend_exec "$name" bash -c "$cmd_line"
+                backend_exec_user "$name" bash -c "$cmd_line"
             done
             ok "Post-install commands done"
         fi
@@ -297,7 +299,7 @@ ${BOLD}Config file format (YAML):${RST}
   Name: archbox          ${DIM}# optional, defaults to filename${RST}
   Image: archlinux
   HomeDir: ~/.zariboxes/arch   ${DIM}# optional${RST}
-    Backend: distrobox     ${DIM}# optional, default from env or distrobox${RST}
+    Backend: distrobox     ${DIM}# optional: distrobox|podman (default: distrobox)${RST}
 
   Packages:
   - base-devel
