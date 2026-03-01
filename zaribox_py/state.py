@@ -24,12 +24,31 @@ class StateStore:
             return ""
         return path.read_text(encoding="utf-8").strip()
 
+    def save_container_hash(self, name: str, value: str) -> None:
+        self.container_hash_path(name).write_text(value, encoding="utf-8")
+
     def saved_packages(self, name: str) -> list[str]:
         path = self.packages_path(name)
         if not path.exists():
             return []
         lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
         return [line for line in lines if line]
+
+    def save_packages(self, name: str, packages: list[str]) -> None:
+        path = self.packages_path(name)
+        if not packages:
+            path.write_text("", encoding="utf-8")
+            return
+
+        package_lines = sorted({package.strip() for package in packages if package.strip()})
+        path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
+
+    def clear_cache(self, name: str) -> None:
+        for path in (self.container_hash_path(name), self.packages_path(name)):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
 
 
 def container_identity_hash(config: ZariConfig) -> str:

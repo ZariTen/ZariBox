@@ -40,6 +40,9 @@ class Backend(ABC):
     ) -> CommandResult:
         raise NotImplementedError
 
+    def fix_home_permissions(self, name: str, home_dir: str) -> None:
+        del name, home_dir
+
     @abstractmethod
     def enter(self, name: str) -> int:
         raise NotImplementedError

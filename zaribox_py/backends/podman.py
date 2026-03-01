@@ -281,6 +281,18 @@ chown -R "$ZB_UID:$ZB_GID" "$ZB_HOME" 2>/dev/null || true
             self._raise_on_failure(result, "podman exec")
         return result
 
+    def fix_home_permissions(self, name: str, home_dir: str) -> None:
+        host_uid = os.getuid()
+        host_gid = os.getgid()
+
+        self._start_if_needed(name)
+        self._ensure_user(name, home_dir)
+        result = run_command(
+            ["podman", "exec", name, "sh", "-lc", f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)}"],
+            capture_output=True,
+        )
+        self._raise_on_failure(result, "podman fix home permissions")
+
     def enter(self, name: str) -> int:
         preferred_shell = Path(os.environ.get("SHELL", "/bin/sh")).name
         host_uid = os.getuid()
