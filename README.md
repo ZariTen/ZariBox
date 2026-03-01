@@ -24,22 +24,16 @@ Image: archlinux
 
 ## Install
 
-System-wide (default prefix `/usr/local`):
+Local install (always installs into `~/.local`):
 
 ```bash
-sudo ./install.sh install
+./install.sh install
 ```
 
-User-local (no sudo, installs to `~/.local`):
+With custom python executable for launcher:
 
 ```bash
-./install.sh install --user
-```
-
-Custom prefix:
-
-```bash
-./install.sh install --prefix /opt/zaribox
+./install.sh install --python python3
 ```
 
 After install:
@@ -50,20 +44,6 @@ zaribox help
 
 ## Uninstall
 
-System-wide uninstall:
-
 ```bash
-sudo ./install.sh uninstall
-```
-
-User-local uninstall:
-
-```bash
-./install.sh uninstall --user
-```
-
-Custom prefix uninstall:
-
-```bash
-./install.sh uninstall --prefix /opt/zaribox
+./install.sh uninstall
 ```
