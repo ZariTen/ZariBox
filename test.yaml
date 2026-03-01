@@ -22,5 +22,5 @@ Run:
 - echo 'exec fish' >> ~/.bashrc
 #- echo 'eval "$(starship init fish)"' >> ~/.config/fish/config.fish
 
-# Optional: extra flags passed to backend create command
-#ExtraFlags: --nvidia
+Graphics:
+- type: nvidia

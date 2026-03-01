@@ -20,6 +20,24 @@ cmd_apply() {
     local extra_flags
     extra_flags=$(parse_yaml "$yaml" "ExtraFlags")
 
+    if [[ "${ACTIVE_BACKEND}" == "podman" ]]; then
+        local graphics_types=()
+        mapfile -t graphics_types < <(parse_yaml_object_list_value "$yaml" "Graphics" "type")
+
+        local has_nvidia=false
+        local graphics_type
+        for graphics_type in "${graphics_types[@]}"; do
+            if [[ "${graphics_type,,}" == "nvidia" ]]; then
+                has_nvidia=true
+                break
+            fi
+        done
+
+        if [[ "$has_nvidia" == true ]] && [[ "$extra_flags" != *"nvidia.com/gpu=all"* ]]; then
+            extra_flags+="${extra_flags:+ }--device nvidia.com/gpu=all"
+        fi
+    fi
+
     if [[ -z "$image" ]]; then
         err "Image field is required in $yaml"
         exit 1
@@ -47,7 +65,7 @@ cmd_apply() {
         container_is_new=true
         needs_recreate=true
     elif [[ "$current_id_hash" != "$old_id_hash" ]]; then
-        warn "Container config changed (Image/HomeDir/ExtraFlags) -- recreating '${name}'..."
+        warn "Container config changed (Image/HomeDir/ExtraFlags/Graphics) -- recreating '${name}'..."
         needs_recreate=true
     fi
 

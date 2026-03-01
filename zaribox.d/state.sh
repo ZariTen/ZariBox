@@ -29,11 +29,12 @@ save_packages() {
 
 container_identity_hash() {
     local yaml="$1"
-    local image home_dir extra_flags
+    local image home_dir extra_flags graphics_types
     image=$(parse_yaml "$yaml" "Image")
     home_dir=$(parse_yaml "$yaml" "HomeDir")
     extra_flags=$(parse_yaml "$yaml" "ExtraFlags")
-    printf '%s\n%s\n%s\n' "$image" "$home_dir" "$extra_flags" | sha256sum | awk '{print $1}'
+    graphics_types=$(parse_yaml_object_list_value "$yaml" "Graphics" "type" | tr '[:upper:]' '[:lower:]')
+    printf '%s\n%s\n%s\n%s\n' "$image" "$home_dir" "$extra_flags" "$graphics_types" | sha256sum | awk '{print $1}'
 }
 
 container_exists() {
