@@ -52,64 +52,46 @@ class PodmanBackend(Backend):
     def _start_if_needed(self, name: str) -> None:
         run_command(["podman", "start", name], capture_output=True)
 
+    def _exec_in_container(self, name: str, cmd: str) -> CommandResult:
+        return run_command(["podman", "exec", "--user", "0", name, "sh", "-c", cmd], capture_output=True)
+
     def _ensure_user(self, name: str, home_dir: str) -> None:
         host_uid = os.getuid()
         host_gid = os.getgid()
         host_user = os.environ.get("USER") or str(host_uid)
 
         self._start_if_needed(name)
-        script = """
-set -eu
 
-if ! getent group "$ZB_GID" >/dev/null 2>&1; then
-    if command -v groupadd >/dev/null 2>&1; then
-        groupadd -g "$ZB_GID" "$ZB_USER" 2>/dev/null || true
-    elif command -v addgroup >/dev/null 2>&1; then
-        addgroup -g "$ZB_GID" "$ZB_USER" 2>/dev/null || true
-    fi
-fi
+        # Check and create group
+        result = self._exec_in_container(name, f"getent group {host_gid}")
+        if result.returncode != 0:
+            self._exec_in_container(
+                name,
+                f"groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || "
+                f"addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true"
+            )
 
-if ! getent passwd "$ZB_UID" >/dev/null 2>&1; then
-    if command -v useradd >/dev/null 2>&1; then
-        useradd -m -d "$ZB_HOME" -u "$ZB_UID" -g "$ZB_GID" -s /bin/bash "$ZB_USER" 2>/dev/null || \
-        useradd -m -d "$ZB_HOME" -u "$ZB_UID" -g "$ZB_GID" "$ZB_USER" 2>/dev/null || true
-    elif command -v adduser >/dev/null 2>&1; then
-        adduser -D -h "$ZB_HOME" -u "$ZB_UID" -G "$ZB_USER" "$ZB_USER" 2>/dev/null || true
-    fi
-fi
+        # Check and create user
+        result = self._exec_in_container(name, f"getent passwd {host_uid}")
+        if result.returncode != 0:
+            self._exec_in_container(
+                name,
+                f"useradd -m -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || "
+                f"adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true"
+            )
 
-if command -v sudo >/dev/null 2>&1 && getent passwd "$ZB_UID" >/dev/null 2>&1; then
-    mkdir -p /etc/sudoers.d
-    if [ -f /etc/sudoers ] && ! grep -Eq "^[[:space:]]*#includedir[[:space:]]+/etc/sudoers\\.d" /etc/sudoers; then
-        printf "\\n#includedir /etc/sudoers.d\\n" >> /etc/sudoers
-    fi
-    printf "%s ALL=(ALL:ALL) NOPASSWD:ALL\\n" "$ZB_USER" > /etc/sudoers.d/90-zaribox-user
-    printf "#%s ALL=(ALL:ALL) NOPASSWD:ALL\\n" "$ZB_UID" >> /etc/sudoers.d/90-zaribox-user
-    chmod 0440 /etc/sudoers.d/90-zaribox-user || true
-fi
+        # Setup sudo if available and user exists
+        result = self._exec_in_container(name, "command -v sudo")
+        if result.returncode == 0:
+            sudoers_content = f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL"
+            self._exec_in_container(
+                name,
+                f"mkdir -p /etc/sudoers.d && "
+                f"echo {shlex.quote(sudoers_content)} > /etc/sudoers.d/90-zaribox-user && "
+                f"chmod 0440 /etc/sudoers.d/90-zaribox-user || true"
+            )
 
-chown -R "$ZB_UID:$ZB_GID" "$ZB_HOME" 2>/dev/null || true
-""".strip()
-
-        args = [
-            "podman",
-            "exec",
-            "--user",
-            "0",
-            "--env",
-            f"ZB_USER={host_user}",
-            "--env",
-            f"ZB_UID={host_uid}",
-            "--env",
-            f"ZB_GID={host_gid}",
-            "--env",
-            f"ZB_HOME={home_dir}",
-            name,
-            "sh",
-            "-lc",
-            script,
-        ]
-        run_command(args, capture_output=True)
+        self._exec_in_container(name, f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)} 2>/dev/null || true")
 
     def container_exists(self, name: str) -> bool:
         if not self.runtime_present():
