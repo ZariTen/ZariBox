@@ -24,7 +24,6 @@ class Backend(ABC):
         image: str,
         home_dir: str,
         extra_flags: str = "",
-        graphics_types: Sequence[str] | None = None,
     ) -> None:
         raise NotImplementedError
 

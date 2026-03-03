@@ -22,5 +22,4 @@ Run:
 - echo 'exec fish' >> ~/.bashrc
 #- echo 'eval "$(starship init fish)"' >> ~/.config/fish/config.fish
 
-Graphics:
-- type: nvidia
+ExtraFlags: --device nvidia.com/gpu=all

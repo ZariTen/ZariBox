@@ -63,7 +63,7 @@ def run_apply(yaml_arg: str | None) -> int:
         needs_recreate = not container_exists or current_id_hash != old_id_hash
 
         if container_exists and current_id_hash != old_id_hash:
-            warn(f"Container config changed (Image/HomeDir/ExtraFlags/Graphics) -- recreating '{name}'...")
+            warn(f"Container config changed (Image/HomeDir/ExtraFlags) -- recreating '{name}'...")
 
         if needs_recreate:
             if container_exists:
@@ -88,7 +88,6 @@ def run_apply(yaml_arg: str | None) -> int:
                 config.image,
                 home_dir,
                 config.extra_flags,
-                [graphic.type for graphic in config.graphics],
             )
             ok("Container created")
 

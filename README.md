@@ -5,7 +5,7 @@
 Declarative container manager for reproducible dev boxes.
 
 ZariBox reads a YAML file and keeps a container in sync with:
-- container identity (`Image`, `HomeDir`, `ExtraFlags`, `Graphics`)
+- container identity (`Image`, `HomeDir`, `ExtraFlags`)
 - package set (`Packages`)
 - optional post-install bootstrap commands (`Run`)
 
@@ -49,7 +49,6 @@ Common fields:
 - `ExtraFlags` (optional): extra backend create flags
 - `Packages` (optional): package list to install and reconcile
 - `Run` (optional): commands executed after creation/package install
-- `Graphics` (optional): list such as `- type: nvidia`
 
 Example:
 
@@ -67,9 +66,6 @@ Packages:
 
 Run:
 	- echo 'exec fish' >> ~/.bashrc
-
-Graphics:
-	- type: nvidia
 ```
 
 ## Requirements

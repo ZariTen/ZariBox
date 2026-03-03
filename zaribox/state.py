@@ -52,12 +52,10 @@ class StateStore:
 
 
 def container_identity_hash(config: ZariConfig) -> str:
-    graphics_types = "\n".join(item.type.lower() for item in config.graphics)
     payload = (
         f"{config.image}\n"
         f"{config.home_dir or ''}\n"
         f"{config.extra_flags}\n"
-        f"{graphics_types}\n"
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

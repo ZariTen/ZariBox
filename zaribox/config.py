@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from .models import GraphicsConfig, ZariConfig
+from .models import ZariConfig
 
 
 def resolve_yaml(arg: str | None) -> Path:
@@ -105,20 +105,6 @@ def _normalize_list(value: object) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     return []
 
-
-def _parse_graphics(value: object) -> list[GraphicsConfig]:
-    graphics: list[GraphicsConfig] = []
-    if not isinstance(value, list):
-        return graphics
-
-    for item in value:
-        if isinstance(item, dict) and "type" in item and item["type"] is not None:
-            type_value = str(item["type"]).strip()
-            if type_value:
-                graphics.append(GraphicsConfig(type=type_value))
-    return graphics
-
-
 def load_config(path: Path) -> ZariConfig:
     raw = _load_yaml(path)
 
@@ -145,7 +131,6 @@ def load_config(path: Path) -> ZariConfig:
         extra_flags=extra_flags,
         packages=_normalize_list(raw.get("Packages")),
         run=_normalize_list(raw.get("Run")),
-        graphics=_parse_graphics(raw.get("Graphics")),
     )
 
 

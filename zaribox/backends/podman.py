@@ -100,32 +100,8 @@ class PodmanBackend(Backend):
         result = run_command(["podman", "container", "inspect", name], capture_output=True)
         return result.returncode == 0
 
-    def _normalize_graphics_types(self, graphics_types: Sequence[str] | None) -> set[str]:
-        if not graphics_types:
-            return set()
-        return {item.strip().lower() for item in graphics_types if item and item.strip()}
-
-    def _has_nvidia_device_flag(self, extra_flag_tokens: Sequence[str]) -> bool:
-        if not extra_flag_tokens:
-            return False
-
-        for index, token in enumerate(extra_flag_tokens):
-            if token == "--device" and index + 1 < len(extra_flag_tokens):
-                if extra_flag_tokens[index + 1] == "nvidia.com/gpu=all":
-                    return True
-            if token.startswith("--device=") and token.removeprefix("--device=") == "nvidia.com/gpu=all":
-                return True
-            if "nvidia.com/gpu=all" in token:
-                return True
-
-        return False
-
-    def _resolved_extra_flag_tokens(self, extra_flags: str, graphics_types: Sequence[str] | None) -> list[str]:
+    def _resolved_extra_flag_tokens(self, extra_flags: str) -> list[str]:
         extra_flag_tokens = shlex.split(extra_flags) if extra_flags.strip() else []
-        normalized_graphics_types = self._normalize_graphics_types(graphics_types)
-
-        if "nvidia" in normalized_graphics_types and not self._has_nvidia_device_flag(extra_flag_tokens):
-            extra_flag_tokens.extend(["--device", "nvidia.com/gpu=all"])
 
         return extra_flag_tokens
 
@@ -135,13 +111,12 @@ class PodmanBackend(Backend):
         image: str,
         home_dir: str,
         extra_flags: str = "",
-        graphics_types: Sequence[str] | None = None,
     ) -> None:
         host_user = os.environ.get("USER") or str(os.getuid())
         mnt_rw_rslave = self._mount_opts("rw,rslave")
         mnt_ro = self._mount_opts("ro")
         mnt_home = self._mount_opts("rslave")
-        extra_flag_tokens = self._resolved_extra_flag_tokens(extra_flags, graphics_types)
+        extra_flag_tokens = self._resolved_extra_flag_tokens(extra_flags)
 
         args = [
             "podman",

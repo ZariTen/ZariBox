@@ -37,9 +37,7 @@ class DistroboxBackend(Backend):
         image: str,
         home_dir: str,
         extra_flags: str = "",
-        graphics_types: Sequence[str] | None = None,
     ) -> None:
-        del graphics_types
         args = ["distrobox", "create", "--name", name, "--image", image, "--home", home_dir]
         if extra_flags.strip():
             args.extend(shlex.split(extra_flags))
