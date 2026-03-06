@@ -13,7 +13,9 @@ def _default_home(name: str) -> str:
     return str(Path.home() / ".local" / "share" / "zaribox" / "homes" / name)
 
 
-def _run_package_install(backend: Backend, name: str, packages: list[str], image: str) -> None:
+def _run_package_install(
+    backend: Backend, name: str, packages: list[str], image: str
+) -> None:
     mgr = detect_pkgmgr(image)
     cmd = install_cmd(mgr)
     step(f"Installing {len(packages)} package(s) via {mgr}...")
@@ -21,7 +23,9 @@ def _run_package_install(backend: Backend, name: str, packages: list[str], image
     ok(f"Packages installed: {' '.join(packages)}")
 
 
-def _run_package_remove(backend: Backend, name: str, packages: list[str], image: str) -> None:
+def _run_package_remove(
+    backend: Backend, name: str, packages: list[str], image: str
+) -> None:
     mgr = detect_pkgmgr(image)
     cmd = remove_cmd(mgr)
     step(f"Removing {len(packages)} package(s): {' '.join(packages)}")
@@ -63,7 +67,9 @@ def run_apply(yaml_arg: str | None) -> int:
         needs_recreate = not container_exists or current_id_hash != old_id_hash
 
         if container_exists and current_id_hash != old_id_hash:
-            warn(f"Container config changed (Image/HomeDir/ExtraFlags) -- recreating '{name}'...")
+            warn(
+                f"Container config changed (Image/HomeDir/ExtraFlags) -- recreating '{name}'..."
+            )
 
         if needs_recreate:
             if container_exists:
@@ -111,7 +117,9 @@ def run_apply(yaml_arg: str | None) -> int:
                 return 0
 
             if to_install:
-                step(f"Installing {len(to_install)} new package(s): {' '.join(to_install)}")
+                step(
+                    f"Installing {len(to_install)} new package(s): {' '.join(to_install)}"
+                )
                 _run_package_install(backend, name, to_install, config.image)
 
             if to_remove:

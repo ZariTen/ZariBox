@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Sequence
 
-from .base import Backend
 from ..shell import CommandResult, command_exists, run_command
+from .base import Backend
 
 
 class PodmanBackend(Backend):
@@ -32,17 +32,29 @@ class PodmanBackend(Backend):
         return Path("/sys/fs/selinux/enforce").exists()
 
     def _mount_opts(self, opts: str) -> str:
-        if self._selinux_enabled() and os.environ.get("ZARIBOX_PODMAN_RELABEL", "0") == "1":
+        if (
+            self._selinux_enabled()
+            and os.environ.get("ZARIBOX_PODMAN_RELABEL", "0") == "1"
+        ):
             return f"{opts},z"
         return opts
 
     def _is_rootless(self) -> bool:
-        result = run_command(["podman", "info", "--format", "{{.Host.Security.Rootless}}"], capture_output=True)
+        result = run_command(
+            ["podman", "info", "--format", "{{.Host.Security.Rootless}}"],
+            capture_output=True,
+        )
         return result.returncode == 0 and result.stdout.strip() == "true"
 
     def _container_home(self, name: str) -> str:
         result = run_command(
-            ["podman", "inspect", "--format", '{{ index .Config.Labels "io.zaribox.home" }}', name],
+            [
+                "podman",
+                "inspect",
+                "--format",
+                '{{ index .Config.Labels "io.zaribox.home" }}',
+                name,
+            ],
             capture_output=True,
         )
         if result.returncode != 0:
@@ -53,7 +65,10 @@ class PodmanBackend(Backend):
         run_command(["podman", "start", name], capture_output=True)
 
     def _exec_in_container(self, name: str, cmd: str) -> CommandResult:
-        return run_command(["podman", "exec", "--user", "0", name, "sh", "-c", cmd], capture_output=True)
+        return run_command(
+            ["podman", "exec", "--user", "0", name, "sh", "-c", cmd],
+            capture_output=True,
+        )
 
     def _ensure_user(self, name: str, home_dir: str) -> None:
         host_uid = os.getuid()
@@ -68,7 +83,7 @@ class PodmanBackend(Backend):
             self._exec_in_container(
                 name,
                 f"groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || "
-                f"addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true"
+                f"addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true",
             )
 
         # Check and create user
@@ -77,7 +92,7 @@ class PodmanBackend(Backend):
             self._exec_in_container(
                 name,
                 f"useradd -m -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || "
-                f"adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true"
+                f"adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true",
             )
 
         # Setup sudo if available and user exists
@@ -88,16 +103,21 @@ class PodmanBackend(Backend):
                 name,
                 f"mkdir -p /etc/sudoers.d && "
                 f"echo {shlex.quote(sudoers_content)} > /etc/sudoers.d/90-zaribox-user && "
-                f"chmod 0440 /etc/sudoers.d/90-zaribox-user || true"
+                f"chmod 0440 /etc/sudoers.d/90-zaribox-user || true",
             )
 
-        self._exec_in_container(name, f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)} 2>/dev/null || true")
+        self._exec_in_container(
+            name,
+            f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)} 2>/dev/null || true",
+        )
 
     def container_exists(self, name: str) -> bool:
         if not self.runtime_present():
             return False
 
-        result = run_command(["podman", "container", "inspect", name], capture_output=True)
+        result = run_command(
+            ["podman", "container", "inspect", name], capture_output=True
+        )
         return result.returncode == 0
 
     def _resolved_extra_flag_tokens(self, extra_flags: str) -> list[str]:
@@ -158,19 +178,42 @@ class PodmanBackend(Backend):
         if display:
             args.extend(["--env", f"DISPLAY={display}"])
             if Path("/tmp/.X11-unix").is_dir():
-                args.extend(["--volume", f"/tmp/.X11-unix:/tmp/.X11-unix:{mnt_rw_rslave}"])
+                args.extend(
+                    ["--volume", f"/tmp/.X11-unix:/tmp/.X11-unix:{mnt_rw_rslave}"]
+                )
 
             xauthority = os.environ.get("XAUTHORITY")
             home = os.environ.get("HOME", "")
             if xauthority and Path(xauthority).is_file():
-                args.extend(["--env", f"XAUTHORITY={xauthority}", "--volume", f"{xauthority}:{xauthority}:{mnt_ro}"])
+                args.extend(
+                    [
+                        "--env",
+                        f"XAUTHORITY={xauthority}",
+                        "--volume",
+                        f"{xauthority}:{xauthority}:{mnt_ro}",
+                    ]
+                )
             elif home and Path(home, ".Xauthority").is_file():
                 auth = str(Path(home, ".Xauthority"))
-                args.extend(["--env", f"XAUTHORITY={auth}", "--volume", f"{auth}:{auth}:{mnt_ro}"])
+                args.extend(
+                    [
+                        "--env",
+                        f"XAUTHORITY={auth}",
+                        "--volume",
+                        f"{auth}:{auth}:{mnt_ro}",
+                    ]
+                )
 
         xdg_runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
         if xdg_runtime_dir and Path(xdg_runtime_dir).is_dir():
-            args.extend(["--env", f"XDG_RUNTIME_DIR={xdg_runtime_dir}", "--volume", f"{xdg_runtime_dir}:{xdg_runtime_dir}:{mnt_rw_rslave}"])
+            args.extend(
+                [
+                    "--env",
+                    f"XDG_RUNTIME_DIR={xdg_runtime_dir}",
+                    "--volume",
+                    f"{xdg_runtime_dir}:{xdg_runtime_dir}:{mnt_rw_rslave}",
+                ]
+            )
 
             wayland_display = os.environ.get("WAYLAND_DISPLAY")
             if wayland_display and Path(xdg_runtime_dir, wayland_display).is_socket():
@@ -228,7 +271,16 @@ class PodmanBackend(Backend):
             host_uid = os.getuid()
             host_gid = os.getgid()
             host_user = os.environ.get("USER") or str(host_uid)
-            args.extend(["--user", f"{host_uid}:{host_gid}", "--env", f"USER={host_user}", "--env", f"LOGNAME={host_user}"])
+            args.extend(
+                [
+                    "--user",
+                    f"{host_uid}:{host_gid}",
+                    "--env",
+                    f"USER={host_user}",
+                    "--env",
+                    f"LOGNAME={host_user}",
+                ]
+            )
         else:
             args.extend(["--user", "0"])
 
@@ -245,7 +297,14 @@ class PodmanBackend(Backend):
         self._start_if_needed(name)
         self._ensure_user(name, home_dir)
         result = run_command(
-            ["podman", "exec", name, "sh", "-lc", f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)}"],
+            [
+                "podman",
+                "exec",
+                name,
+                "sh",
+                "-lc",
+                f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)}",
+            ],
             capture_output=True,
         )
         self._raise_on_failure(result, "podman fix home permissions")

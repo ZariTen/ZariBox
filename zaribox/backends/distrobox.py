@@ -4,8 +4,8 @@ import shlex
 import subprocess
 from typing import Sequence
 
-from .base import Backend
 from ..shell import CommandError, CommandResult, command_exists, run_command
+from .base import Backend
 
 
 class DistroboxBackend(Backend):
@@ -17,7 +17,9 @@ class DistroboxBackend(Backend):
     def _raise_on_failure(self, result: CommandResult) -> None:
         if result.returncode != 0:
             raise RuntimeError(
-                f"distrobox backend command failed\n{result.stderr.strip()}" if result.stderr.strip() else "distrobox backend command failed"
+                f"distrobox backend command failed\n{result.stderr.strip()}"
+                if result.stderr.strip()
+                else "distrobox backend command failed"
             )
 
     def container_exists(self, name: str) -> bool:
@@ -29,7 +31,9 @@ class DistroboxBackend(Backend):
             return False
 
         output = result.stdout
-        return f"| {name} " in output or any(line.split() and name == line.split()[0] for line in output.splitlines())
+        return f"| {name} " in output or any(
+            line.split() and name == line.split()[0] for line in output.splitlines()
+        )
 
     def create(
         self,
@@ -38,7 +42,16 @@ class DistroboxBackend(Backend):
         home_dir: str,
         extra_flags: str = "",
     ) -> None:
-        args = ["distrobox", "create", "--name", name, "--image", image, "--home", home_dir]
+        args = [
+            "distrobox",
+            "create",
+            "--name",
+            name,
+            "--image",
+            image,
+            "--home",
+            home_dir,
+        ]
         if extra_flags.strip():
             args.extend(shlex.split(extra_flags))
 
@@ -62,7 +75,9 @@ class DistroboxBackend(Backend):
         result = run_command(args, capture_output=capture_output)
         if check and result.returncode != 0:
             raise RuntimeError(
-                f"distrobox exec failed\n{result.stderr.strip()}" if result.stderr.strip() else "distrobox exec failed"
+                f"distrobox exec failed\n{result.stderr.strip()}"
+                if result.stderr.strip()
+                else "distrobox exec failed"
             )
         return result
 

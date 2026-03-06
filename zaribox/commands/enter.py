@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from .apply import run_apply
 from ..backends import make_backend
 from ..config import load_config, resolve_backend, resolve_yaml
 from ..logging import err, log, warn
+from .apply import run_apply
 
 
 def run_enter(yaml_arg: str | None) -> int:

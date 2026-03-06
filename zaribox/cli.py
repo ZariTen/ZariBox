@@ -21,16 +21,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
 
-    status_parser = subparsers.add_parser("status", help="Show sync status with package drift")
+    status_parser = subparsers.add_parser(
+        "status", help="Show sync status with package drift"
+    )
     status_parser.add_argument("yaml", nargs="?")
 
     apply_parser = subparsers.add_parser("apply", help="Sync container to match config")
     apply_parser.add_argument("yaml", nargs="?")
 
-    enter_parser = subparsers.add_parser("enter", help="Enter container (auto-apply if needed)")
+    enter_parser = subparsers.add_parser(
+        "enter", help="Enter container (auto-apply if needed)"
+    )
     enter_parser.add_argument("yaml", nargs="?")
 
-    destroy_parser = subparsers.add_parser("destroy", help="Remove container (home dir preserved)")
+    destroy_parser = subparsers.add_parser(
+        "destroy", help="Remove container (home dir preserved)"
+    )
     destroy_parser.add_argument("yaml", nargs="?")
 
     subparsers.add_parser("list", help="List all ZariBox-managed containers")

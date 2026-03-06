@@ -23,7 +23,9 @@ def resolve_yaml(arg: str | None) -> Path:
 
     candidates = sorted(Path.cwd().glob("*.yaml")) + sorted(Path.cwd().glob("*.yml"))
     if not candidates:
-        raise ValueError("No .yaml file found. Pass one explicitly or run from a directory containing one.")
+        raise ValueError(
+            "No .yaml file found. Pass one explicitly or run from a directory containing one."
+        )
     return candidates[0]
 
 
@@ -49,7 +51,9 @@ def _strip_comments(line: str) -> str:
 
 def _unquote(value: str) -> str:
     text = value.strip()
-    if len(text) >= 2 and ((text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'")):
+    if len(text) >= 2 and (
+        (text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'")
+    ):
         return text[1:-1]
     return text
 
@@ -105,6 +109,7 @@ def _normalize_list(value: object) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     return []
 
+
 def load_config(path: Path) -> ZariConfig:
     raw = _load_yaml(path)
 
@@ -120,7 +125,9 @@ def load_config(path: Path) -> ZariConfig:
     home_dir = str(home_dir_value).strip() if home_dir_value is not None else None
 
     extra_flags_value = raw.get("ExtraFlags")
-    extra_flags = str(extra_flags_value).strip() if extra_flags_value is not None else ""
+    extra_flags = (
+        str(extra_flags_value).strip() if extra_flags_value is not None else ""
+    )
 
     return ZariConfig(
         file_path=path,
@@ -142,5 +149,7 @@ def resolve_backend(config: ZariConfig | None) -> str:
         selected = "distrobox"
 
     if selected not in {"distrobox", "podman"}:
-        raise ValueError(f"Unsupported backend: '{selected}'. Supported: distrobox, podman")
+        raise ValueError(
+            f"Unsupported backend: '{selected}'. Supported: distrobox, podman"
+        )
     return selected

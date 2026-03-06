@@ -40,7 +40,9 @@ class StateStore:
             path.write_text("", encoding="utf-8")
             return
 
-        package_lines = sorted({package.strip() for package in packages if package.strip()})
+        package_lines = sorted(
+            {package.strip() for package in packages if package.strip()}
+        )
         path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
 
     def clear_cache(self, name: str) -> None:
@@ -52,11 +54,7 @@ class StateStore:
 
 
 def container_identity_hash(config: ZariConfig) -> str:
-    payload = (
-        f"{config.image}\n"
-        f"{config.home_dir or ''}\n"
-        f"{config.extra_flags}\n"
-    )
+    payload = f"{config.image}\n{config.home_dir or ''}\n{config.extra_flags}\n"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

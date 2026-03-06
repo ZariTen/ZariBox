@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 INSTALL_COMMANDS: dict[str, str] = {
     "pacman": 'pacman -Syu --noconfirm "$@"',
     "apt": 'apt-get install -y "$@"',

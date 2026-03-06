@@ -27,7 +27,9 @@ def run_destroy(yaml_arg: str | None) -> int:
             warn(f"Container '{name}' does not exist.")
             return 0
 
-        print(f"{RED}{BOLD}This will destroy container '{name}' (home dir is preserved).{RST}")
+        print(
+            f"{RED}{BOLD}This will destroy container '{name}' (home dir is preserved).{RST}"
+        )
         confirm = input("  Confirm? [y/N] ").strip()
         if confirm not in {"y", "Y"}:
             log("Aborted.")
