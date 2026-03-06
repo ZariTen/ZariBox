@@ -18,3 +18,9 @@ include = ["zaribox", "zaribox.*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "zaribox.__version__"}
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "flake8",
+]
