@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
+
+import yaml
 
 from .models import ZariConfig
 
@@ -30,76 +31,12 @@ def resolve_yaml(arg: str | None) -> Path:
 
 
 def _load_yaml(path: Path) -> dict:
-    try:
-        import yaml  # type: ignore[import-not-found]
-    except ModuleNotFoundError:
-        return _load_yaml_fallback(path)
-
     with path.open("r", encoding="utf-8") as stream:
         raw = yaml.safe_load(stream) or {}
 
     if not isinstance(raw, dict):
         raise ValueError(f"Top-level YAML document must be a mapping: {path}")
     return raw
-
-
-def _strip_comments(line: str) -> str:
-    if "#" not in line:
-        return line.rstrip()
-    return line.split("#", 1)[0].rstrip()
-
-
-def _unquote(value: str) -> str:
-    text = value.strip()
-    if len(text) >= 2 and (
-        (text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'")
-    ):
-        return text[1:-1]
-    return text
-
-
-def _load_yaml_fallback(path: Path) -> dict:
-    data: dict[str, object] = {}
-    current_list_key: str | None = None
-
-    key_line_pattern = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$")
-
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = _strip_comments(raw_line)
-        if not line.strip():
-            continue
-
-        stripped = line.strip()
-
-        key_match = key_line_pattern.match(stripped)
-        if key_match:
-            key, value = key_match.group(1), key_match.group(2).strip()
-            if value:
-                data[key] = _unquote(value)
-                current_list_key = None
-            else:
-                if key not in data or not isinstance(data.get(key), list):
-                    data[key] = []
-                current_list_key = key
-            continue
-
-        if current_list_key and stripped.startswith("-"):
-            item = stripped[1:].strip()
-            target = data.get(current_list_key)
-            if not isinstance(target, list):
-                target = []
-                data[current_list_key] = target
-
-            if not item:
-                continue
-
-            inline_kv = key_line_pattern.match(item)
-            if inline_kv:
-                target.append({inline_kv.group(1): _unquote(inline_kv.group(2))})
-            else:
-                target.append(_unquote(item))
-
-    return data
 
 
 def _normalize_list(value: object) -> list[str]:

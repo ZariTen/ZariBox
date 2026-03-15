@@ -71,6 +71,7 @@ Run:
 ## Requirements
 
 - Python 3.10+
+- PyYAML
 - A container runtime backend:
 	- `distrobox` (default), or
 	- `podman`
@@ -79,7 +80,10 @@ Run:
 
 Local install (copies project to `~/.local/lib/zaribox` and installs launcher at `~/.local/bin/zaribox`):
 
+Install `PyYAML` into the Python environment used by the launcher before running the install script.
+
 ```bash
+python3 -m pip install PyYAML
 ./install.sh install
 ```
 
