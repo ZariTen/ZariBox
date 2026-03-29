@@ -249,7 +249,7 @@ class PodmanBackend(Backend):
 
         args.extend([image, "sleep", "infinity"])
 
-        create_result = run_command(args, capture_output=True)
+        create_result = run_command(args, capture_output=False)
         self._raise_on_failure(create_result, "podman create")
 
         self._start_if_needed(name)

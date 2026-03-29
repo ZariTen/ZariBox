@@ -7,6 +7,13 @@ import yaml
 
 from .models import ZariConfig
 
+def _resolve_image(image: str) -> str:
+    first = image.split("/")[0]
+    if "." not in first and ":" not in first:
+        image = f"docker.io/library/{image}" if "/" not in image else f"docker.io/{image}"
+    if ":" not in image.split("/")[-1]:
+        image = f"{image}:latest"
+    return image
 
 def resolve_yaml(arg: str | None) -> Path:
     if arg:
@@ -53,6 +60,7 @@ def load_config(path: Path) -> ZariConfig:
     image = str(raw.get("Image", "")).strip()
     if not image:
         raise ValueError(f"Image field is required in {path}")
+    image = _resolve_image(image)
 
     name = str(raw.get("Name", "")).strip() or path.stem
     backend = raw.get("Backend")
