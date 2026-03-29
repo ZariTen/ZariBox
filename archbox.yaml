@@ -2,6 +2,7 @@
 # Run: zaribox apply archbox.yaml
 
 Name: archbox
+Backend: distrobox
 Image: archlinux
 
 # Optional: custom home directory (persists across recreations)

@@ -26,7 +26,7 @@ class DistroboxBackend(Backend):
         if not self.runtime_present():
             return False
 
-        result = run_command(["distrobox", "list"], capture_output=True)
+        result = run_command(["distrobox", "list"], capture_output=False)
         if result.returncode != 0:
             return False
 
@@ -51,12 +51,13 @@ class DistroboxBackend(Backend):
             image,
             "--home",
             home_dir,
+            "--yes",
         ]
         if extra_flags.strip():
             args.extend(shlex.split(extra_flags))
 
         try:
-            result = run_command(args, capture_output=True)
+            result = run_command(args, capture_output=False)
         except CommandError as exc:
             raise RuntimeError(str(exc)) from exc
         self._raise_on_failure(result)
