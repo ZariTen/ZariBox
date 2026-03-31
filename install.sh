@@ -6,10 +6,8 @@ usage() {
 Usage:
 	./install.sh install [--python <exe>]
 	./install.sh uninstall
-
 Options:
 	--python <exe>   Python executable to use for launcher (default: python3)
-
 Examples:
 	./install.sh install
 	./install.sh install --python python3
@@ -29,27 +27,29 @@ install_program() {
 	local lib_dir
 	lib_dir="$(target_lib_dir)"
 
+	if [[ ! -d "$root_dir/zaribox" ]]; then
+		echo "Source directory not found: $root_dir/zaribox" >&2
+		exit 1
+	fi
+
 	rm -rf "$lib_dir"
 	mkdir -p "$lib_dir"
-
 	cp -a "$root_dir/zaribox/." "$lib_dir/"
-
 	echo "Installed program files to $lib_dir"
 }
 
 install_launcher() {
-	local bin_dir launcher python_path lib_dir
+	local bin_dir launcher lib_dir
 	bin_dir="$(target_bin_dir)"
 	launcher="$bin_dir/zaribox"
-	python_path="$(command -v "$python_exe")"
 	lib_dir="$(target_lib_dir)"
 
 	mkdir -p "$bin_dir"
-	cat >"$launcher" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-	exec "$python_path" "$lib_dir/__main__.py" "\$@"
-EOF
+	cat >"$launcher" <<-EOF
+		#!/usr/bin/env bash
+		set -euo pipefail
+		exec "$python_exe" "$lib_dir/__main__.py" "\$@"
+	EOF
 	chmod +x "$launcher"
 	echo "Installed launcher at $launcher"
 }
@@ -85,6 +85,11 @@ python_exe="python3"
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--python)
+			if [[ "$action" == "uninstall" ]]; then
+				echo "Warning: --python is ignored for uninstall" >&2
+				shift 2
+				continue
+			fi
 			if [[ $# -lt 2 ]]; then
 				echo "Missing value for --python" >&2
 				exit 1
@@ -104,19 +109,21 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if ! command -v "$python_exe" >/dev/null 2>&1; then
-	echo "Python executable not found: $python_exe" >&2
-	exit 1
-fi
-
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$root_dir"
 
 case "$action" in
 	install)
+		if ! command -v "$python_exe" >/dev/null 2>&1; then
+			echo "Python executable not found: $python_exe" >&2
+			exit 1
+		fi
 		install_program
 		install_launcher
 		echo "Installed. Ensure ~/.local/bin is in PATH."
+		if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+			echo "Warning: $HOME/.local/bin is not in your PATH. Add it to your shell profile to use zaribox."
+		fi
 		;;
 	uninstall)
 		remove_launcher
