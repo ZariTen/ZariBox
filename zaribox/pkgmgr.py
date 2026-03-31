@@ -20,7 +20,7 @@ REMOVE_COMMANDS: dict[str, str] = {
 
 
 def detect_pkgmgr(image: str) -> str:
-    image_name = image.lower()
+    image_name = image.lower().split("/")[-1].split(":")[0]
     if image_name.startswith(("arch", "manjaro", "endeavour")):
         return "pacman"
     if image_name.startswith(("ubuntu", "debian", "pop", "mint")):
