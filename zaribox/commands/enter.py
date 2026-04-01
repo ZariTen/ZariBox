@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..backends import make_backend
 from ..config import load_config, resolve_backend, resolve_yaml
 from ..logging import err, log, warn
+from ..state import StateStore
 from .apply import run_apply
 
 
 def run_enter(yaml_arg: str | None) -> int:
+    if yaml_arg and not yaml_arg.endswith((".yml", ".yaml")) and not Path(yaml_arg).exists():
+        state = StateStore()
+        resolved = state.yaml_path_for(yaml_arg)
+        if resolved is None:
+            err(f"No known container '{yaml_arg}'. Run apply first.")
+            return 1
+        yaml_arg = str(resolved)
+
     try:
         yaml_path = resolve_yaml(yaml_arg)
         config = load_config(yaml_path)

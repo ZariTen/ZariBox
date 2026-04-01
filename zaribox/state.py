@@ -52,6 +52,15 @@ class StateStore:
             except FileNotFoundError:
                 continue
 
+    def yaml_path_for(self, name: str) -> Path | None:
+        path = self.cache_dir / f"{name}.yaml_path"
+        if not path.exists():
+            return None
+        return Path(path.read_text(encoding="utf-8").strip())
+
+    def save_yaml_path(self, name: str, yaml_path: Path) -> None:
+        (self.cache_dir / f"{name}.yaml_path").write_text(str(yaml_path), encoding="utf-8")
+
 def _normalize_image(image: str) -> str:
     image = image.strip()
     for prefix in ("docker.io/library/", "docker.io/"):
