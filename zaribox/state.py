@@ -52,9 +52,17 @@ class StateStore:
             except FileNotFoundError:
                 continue
 
+def _normalize_image(image: str) -> str:
+    image = image.strip()
+    for prefix in ("docker.io/library/", "docker.io/"):
+        if image.startswith(prefix):
+            image = image[len(prefix):]
+    if ":" not in image:
+        image += ":latest"
+    return image
 
 def container_identity_hash(config: ZariConfig) -> str:
-    payload = f"{config.image}\n{config.home_dir or ''}\n{config.extra_flags}\n"
+    payload = f"{_normalize_image(config.image)}\n{config.home_dir or ''}\n{config.extra_flags}\n"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

@@ -86,7 +86,9 @@ def run_apply(yaml_arg: str | None) -> int:
             else:
                 step(f"Creating new container '{name}'...")
 
-            Path(home_dir).mkdir(parents=True, exist_ok=True)
+            home = Path(home_dir)
+            home.mkdir(parents=True, exist_ok=True)
+            home.chmod(0o700)
 
             step("Pulling image and creating container...")
             backend.create(
@@ -138,7 +140,7 @@ def run_apply(yaml_arg: str | None) -> int:
                 backend.exec(
                     name,
                     ["bash", "-c", command_line],
-                    as_user=(backend_name == "podman"),
+                    as_user=True,
                     capture_output=False,
                 )
             ok("Post-install commands done")

@@ -26,7 +26,7 @@ class DistroboxBackend(Backend):
         if not self.runtime_present():
             return False
 
-        result = run_command(["distrobox", "list"], capture_output=False)
+        result = run_command(["distrobox", "list"], capture_output=True)
         if result.returncode != 0:
             return False
 
@@ -71,8 +71,13 @@ class DistroboxBackend(Backend):
         check: bool = True,
         capture_output: bool = True,
     ) -> CommandResult:
-        del as_user
-        args = ["distrobox", "enter", name, "--", *command]
+        if as_user:
+            cmd = list(command)
+        else:
+            cmd = ["sudo", *command]
+
+        args = ["distrobox", "enter", name, "--", *cmd]
+
         result = run_command(args, capture_output=capture_output)
         if check and result.returncode != 0:
             raise RuntimeError(
