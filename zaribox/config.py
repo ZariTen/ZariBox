@@ -34,6 +34,12 @@ def resolve_yaml(arg: str | None) -> Path:
         raise ValueError(
             "No .yaml file found. Pass one explicitly or run from a directory containing one."
         )
+    if len(candidates) > 1:
+        choices = ", ".join(path.name for path in candidates)
+        raise ValueError(
+            "Multiple YAML files found. Pass one explicitly (for example: "
+            f"'zaribox status {candidates[0].name}'). Found: {choices}"
+        )
     return candidates[0]
 
 

@@ -29,7 +29,8 @@ zaribox destroy [file.yaml]
 zaribox help
 ```
 
-If no file is passed, ZariBox auto-selects the first `*.yaml` / `*.yml` in the current directory.
+If no file is passed, ZariBox auto-selects the only `*.yaml` / `*.yml` in the current directory.
+If multiple YAML files are present, pass one explicitly.
 
 ## YAML format
 
