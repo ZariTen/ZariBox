@@ -13,12 +13,12 @@
         version = "0.1.5";
         src = ./.;
         format = "pyproject";
-        propagatedBuildInputs = with pkgs.python3Packages; [ pyyaml setuptools ];
+        propagatedBuildInputs = with pkgs.python3Packages; [ pyyaml ];
       };
 
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = [
-          (pkgs.python3.withPackages (ps: [ ps.pyyaml ps.pytest ]))
+          (pkgs.python3.withPackages (ps: [ ps.pyyaml ps.pytest ps.flake8 ]))
           pkgs.git
         ];
         shellHook = ''
