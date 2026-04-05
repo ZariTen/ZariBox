@@ -1,19 +1,21 @@
 # ZariBox
-
 ![ZariBox](zaribox.svg)
 
 Declarative container manager for reproducible dev boxes.
 
 ZariBox reads a YAML file and keeps a container in sync with:
+
 - container identity (`Image`, `HomeDir`, `ExtraFlags`)
 - package set (`Packages`)
 - optional post-install bootstrap commands (`Run`)
 
 Supported backends:
+
 - `distrobox`
 - `podman`
 
 Backend selection precedence:
+
 1. `ZARIBOX_BACKEND` environment variable
 2. `Backend:` field in YAML
 3. default: `distrobox`
@@ -61,12 +63,12 @@ HomeDir: /home/user/.local/share/zaribox/homes/devbox
 ExtraFlags: --device nvidia.com/gpu=all
 
 Packages:
-	- git
-	- neovim
-	- fish
+    - git
+    - neovim
+    - fish
 
 Run:
-	- echo 'exec fish' >> ~/.bashrc
+    - echo 'exec fish' >> ~/.bashrc
 ```
 
 ## Requirements
@@ -74,35 +76,55 @@ Run:
 - Python 3.10+
 - PyYAML
 - A container runtime backend:
-	- `distrobox` (default), or
-	- `podman`
+  - `distrobox` (default), or
+  - `podman`
 
 ## Install
 
-Local install (copies project to `~/.local/lib/zaribox` and installs launcher at `~/.local/bin/zaribox`):
+### Nix (recommended)
 
-Install `PyYAML` into the Python environment used by the launcher before running the install script.
+Try it without installing:
 
 ```bash
-python3 -m pip install PyYAML
+nix run github:ZariTen/ZariBox
+```
+
+Add to your system flake:
+
+```nix
+inputs.zaribox.url = "github:ZariTen/ZariBox";
+
+# then in environment.systemPackages or home.packages:
+zaribox.packages.x86_64-linux.default
+```
+
+### pip
+
+```bash
+pip install git+https://github.com/ZariTen/ZariBox.git
+```
+
+### Local (install.sh)
+
+```bash
 ./install.sh install
-```
-
-With custom Python executable for launcher:
-
-```bash
-./install.sh install --python python3
-```
-
-After install:
-
-```bash
-zaribox help
 ```
 
 Ensure `~/.local/bin` is in your `PATH`.
 
 ## Uninstall
+
+### Nix
+
+Remove from your system config and rebuild.
+
+### pip
+
+```bash
+pip uninstall zaribox
+```
+
+### Local
 
 ```bash
 ./install.sh uninstall
