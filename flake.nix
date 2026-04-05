@@ -15,6 +15,7 @@
         buildInputs = [
           (pkgs.python3.withPackages (ps: [
             ps.pyyaml
+            ps.pytest
           ]))
           pkgs.git
         ];
