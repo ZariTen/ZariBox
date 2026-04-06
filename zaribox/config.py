@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 
 import yaml
 
@@ -43,20 +44,26 @@ def resolve_yaml(arg: str | None) -> Path:
     return candidates[0]
 
 
-def _load_yaml(path: Path) -> dict:
+def _load_yaml(path: Path) -> dict[str, object]:
     with path.open("r", encoding="utf-8") as stream:
-        raw = yaml.safe_load(stream) or {}
+        loaded_obj: object = yaml.safe_load(stream)
 
-    if not isinstance(raw, dict):
+    if loaded_obj is None:
+        loaded: dict[object, object] = {}
+    elif isinstance(loaded_obj, dict):
+        loaded = cast(dict[object, object], loaded_obj)
+    else:
         raise ValueError(f"Top-level YAML document must be a mapping: {path}")
-    return raw
+
+    return {str(key): value for key, value in loaded.items()}
 
 
 def _normalize_list(value: object) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
+        items = cast(list[object], value)
+        return [str(item).strip() for item in items if str(item).strip()]
     return []
 
 
