@@ -18,6 +18,9 @@ class StateStore:
     def packages_path(self, name: str) -> Path:
         return self.cache_dir / f"{name}.packages"
 
+    def yaml_path_cache_path(self, name: str) -> Path:
+        return self.cache_dir / f"{name}.yaml_path"
+
     def saved_container_hash(self, name: str) -> str:
         path = self.container_hash_path(name)
         if not path.exists():
@@ -46,20 +49,24 @@ class StateStore:
         path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
 
     def clear_cache(self, name: str) -> None:
-        for path in (self.container_hash_path(name), self.packages_path(name)):
+        for path in (
+            self.container_hash_path(name),
+            self.packages_path(name),
+            self.yaml_path_cache_path(name),
+        ):
             try:
                 path.unlink()
             except FileNotFoundError:
                 continue
 
     def yaml_path_for(self, name: str) -> Path | None:
-        path = self.cache_dir / f"{name}.yaml_path"
+        path = self.yaml_path_cache_path(name)
         if not path.exists():
             return None
         return Path(path.read_text(encoding="utf-8").strip())
 
     def save_yaml_path(self, name: str, yaml_path: Path) -> None:
-        (self.cache_dir / f"{name}.yaml_path").write_text(str(yaml_path), encoding="utf-8")
+        self.yaml_path_cache_path(name).write_text(str(yaml_path), encoding="utf-8")
 
 def _normalize_image(image: str) -> str:
     image = image.strip()
