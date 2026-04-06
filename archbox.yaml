@@ -6,7 +6,7 @@ Backend: distrobox
 Image: archlinux
 
 # Optional: custom home directory (persists across recreations)
-HomeDir: /home/yeulten/Documents/Archbox/
+HomeDir: /home/$USER/Documents/Archbox/
 
 Packages:
   - base-devel
@@ -15,6 +15,7 @@ Packages:
   - starship
   - fish
   - python
+  - python-pyaml
 
 # Optional: commands to run after package install
 Run:

@@ -10,7 +10,7 @@
     in {
       packages.${system}.default = pkgs.python3Packages.buildPythonApplication {
         pname = "zaribox";
-        version = "0.1.5";
+        version = "0.1.6";
         src = ./.;
         format = "pyproject";
         propagatedBuildInputs = with pkgs.python3Packages; [ pyyaml ];

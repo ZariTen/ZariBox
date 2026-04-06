@@ -1,0 +1,102 @@
+name: Release on Version Change
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "zaribox/__init__.py"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Extract current version
+        id: current_version
+        run: |
+          VERSION=$(python -c "import zaribox; print(zaribox.__version__)")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Extract previous version from git tag
+        id: previous_version
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "previous_version=" >> $GITHUB_OUTPUT
+            echo "No previous tags found"
+          else
+            PREV_VERSION=${PREV_TAG#v}
+            echo "previous_version=$PREV_VERSION" >> $GITHUB_OUTPUT
+            echo "Previous version: $PREV_VERSION"
+          fi
+
+      - name: Check if version has changed
+        id: version_check
+        run: |
+          CURRENT="${{ steps.current_version.outputs.version }}"
+          PREVIOUS="${{ steps.previous_version.outputs.previous_version }}"
+
+          # Guard against releasing a tag that already exists
+          if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
+            echo "Tag v${CURRENT} already exists — skipping release"
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "Version has changed from $PREVIOUS to $CURRENT"
+          else
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+            echo "Version has not changed"
+          fi
+
+      - name: Generate release notes
+        if: steps.version_check.outputs.version_changed == 'true'
+        id: release_notes
+        run: |
+          PREV_TAG="${{ steps.previous_version.outputs.previous_version }}"
+          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --oneline --pretty=format:"- %h: %s")
+          else
+            CHANGELOG=$(git log "v${PREV_TAG}..HEAD" --oneline --pretty=format:"- %h: %s")
+          fi
+
+          # Fallback if changelog is empty (e.g. squash merge)
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- Version bump to ${CURRENT_VERSION}"
+          fi
+
+          # Use a file to safely pass multi-line content between steps
+          echo "$CHANGELOG" > /tmp/changelog.txt
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changelog.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: steps.version_check.outputs.version_changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.current_version.outputs.version }}
+          name: Release v${{ steps.current_version.outputs.version }}
+          body: |
+            ## Changes
+            ${{ steps.release_notes.outputs.changelog }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

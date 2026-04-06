@@ -6,7 +6,7 @@ Backend: podman
 Image: archlinux
 
 # Optional: custom home directory (persists across recreations)
-HomeDir: /home/yeulten/Documents/Testbox/
+HomeDir: /home/$USER/Documents/Testbox/
 
 Packages:
   - base-devel

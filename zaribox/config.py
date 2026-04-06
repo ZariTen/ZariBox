@@ -73,7 +73,7 @@ def load_config(path: Path) -> ZariConfig:
     backend_name = str(backend).strip() if backend is not None else None
 
     home_dir_value = raw.get("HomeDir")
-    home_dir = str(home_dir_value).strip() if home_dir_value is not None else None
+    home_dir = os.path.expandvars(str(home_dir_value).strip()) if home_dir_value is not None else None
 
     extra_flags_value = raw.get("ExtraFlags")
     extra_flags = (
