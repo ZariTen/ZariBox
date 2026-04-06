@@ -92,7 +92,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.current_version.outputs.version }}
-          name: Release v${{ steps.current_version.outputs.version }}
+          name: v${{ steps.current_version.outputs.version }}
           body: |
             ## Changes
             ${{ steps.release_notes.outputs.changelog }}
