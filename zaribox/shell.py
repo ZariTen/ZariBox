@@ -44,8 +44,8 @@ def run_command(
         text=True,
     )
 
-    stdout = completed.stdout if isinstance(completed.stdout, str) else ""
-    stderr = completed.stderr if isinstance(completed.stderr, str) else ""
+    stdout = completed.stdout
+    stderr = completed.stderr
 
     if check and completed.returncode != 0:
         raise CommandError(args, completed.returncode, stderr)

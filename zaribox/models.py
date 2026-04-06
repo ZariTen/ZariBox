@@ -12,5 +12,5 @@ class ZariConfig:
     backend: str | None = None
     home_dir: str | None = None
     extra_flags: str = ""
-    packages: list[str] = field(default_factory=list)
-    run: list[str] = field(default_factory=list)
+    packages: list[str] = field(default_factory=list[str])
+    run: list[str] = field(default_factory=list[str])
