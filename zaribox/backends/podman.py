@@ -16,6 +16,10 @@ class PodmanBackend(Backend):
     def runtime_present(self) -> bool:
         return command_exists("podman")
 
+    def _get_host_identity(self) -> tuple[int, int, str]:
+        uid = os.getuid()
+        return uid, os.getgid(), os.environ.get("USER") or str(uid)
+
     def _raise_on_failure(self, result: CommandResult, context: str) -> None:
         if result.returncode != 0:
             stderr_text = result.stderr.strip()
@@ -71,45 +75,19 @@ class PodmanBackend(Backend):
         )
 
     def _ensure_user(self, name: str, home_dir: str) -> None:
-        host_uid = os.getuid()
-        host_gid = os.getgid()
-        host_user = os.environ.get("USER") or str(host_uid)
-
+        host_uid, host_gid, host_user = self._get_host_identity()
         self._start_if_needed(name)
 
-        # Check and create group
-        result = self._exec_in_container(name, f"getent group {host_gid}")
-        if result.returncode != 0:
-            self._exec_in_container(
-                name,
-                f"groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || "
-                f"addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true",
-            )
-
-        # Check and create user
-        result = self._exec_in_container(name, f"getent passwd {host_uid}")
-        if result.returncode != 0:
-            self._exec_in_container(
-                name,
-                f"useradd -m -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || "
-                f"adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true",
-            )
-
-        # Setup sudo if available and user exists
-        result = self._exec_in_container(name, "command -v sudo")
-        if result.returncode == 0:
-            sudoers_content = f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL"
-            self._exec_in_container(
-                name,
-                f"mkdir -p /etc/sudoers.d && "
-                f"echo {shlex.quote(sudoers_content)} > /etc/sudoers.d/90-zaribox-user && "
-                f"chmod 0440 /etc/sudoers.d/90-zaribox-user || true",
-            )
-
-        self._exec_in_container(
-            name,
-            f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)} 2>/dev/null || true",
-        )
+        setup_script = f"""
+            getent group {host_gid} >/dev/null 2>&1 || groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true
+            getent passwd {host_uid} >/dev/null 2>&1 || useradd -m -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true
+            if command -v sudo >/dev/null 2>&1; then
+                mkdir -p /etc/sudoers.d
+                echo {shlex.quote(f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL")} > /etc/sudoers.d/90-zaribox-user
+                chmod 0440 /etc/sudoers.d/90-zaribox-user
+            fi
+        """
+        self._exec_in_container(name, setup_script)
 
     def container_exists(self, name: str) -> bool:
         if not self.runtime_present():
@@ -120,11 +98,6 @@ class PodmanBackend(Backend):
         )
         return result.returncode == 0
 
-    def _resolved_extra_flag_tokens(self, extra_flags: str) -> list[str]:
-        extra_flag_tokens = shlex.split(extra_flags) if extra_flags.strip() else []
-
-        return extra_flag_tokens
-
     def create(
         self,
         name: str,
@@ -132,11 +105,10 @@ class PodmanBackend(Backend):
         home_dir: str,
         extra_flags: str = "",
     ) -> None:
-        host_user = os.environ.get("USER") or str(os.getuid())
+        _, _, host_user = self._get_host_identity()
         mnt_rw_rslave = self._mount_opts("rw,rslave")
         mnt_ro = self._mount_opts("ro")
         mnt_home = self._mount_opts("rslave")
-        extra_flag_tokens = self._resolved_extra_flag_tokens(extra_flags)
 
         args = [
             "podman",
@@ -182,25 +154,16 @@ class PodmanBackend(Backend):
                     ["--volume", f"/tmp/.X11-unix:/tmp/.X11-unix:{mnt_rw_rslave}"]
                 )
 
-            xauthority = os.environ.get("XAUTHORITY")
-            home = os.environ.get("HOME", "")
-            if xauthority and Path(xauthority).is_file():
+            xauth = os.environ.get("XAUTHORITY") or str(
+                Path(os.environ.get("HOME", ""), ".Xauthority")
+            )
+            if Path(xauth).is_file():
                 args.extend(
                     [
                         "--env",
-                        f"XAUTHORITY={xauthority}",
+                        f"XAUTHORITY={xauth}",
                         "--volume",
-                        f"{xauthority}:{xauthority}:{mnt_ro}",
-                    ]
-                )
-            elif home and Path(home, ".Xauthority").is_file():
-                auth = str(Path(home, ".Xauthority"))
-                args.extend(
-                    [
-                        "--env",
-                        f"XAUTHORITY={auth}",
-                        "--volume",
-                        f"{auth}:{auth}:{mnt_ro}",
+                        f"{xauth}:{xauth}:{mnt_ro}",
                     ]
                 )
 
@@ -244,8 +207,8 @@ class PodmanBackend(Backend):
         if Path("/etc/localtime").exists():
             args.extend(["--volume", "/etc/localtime:/etc/localtime:ro"])
 
-        if extra_flag_tokens:
-            args.extend(extra_flag_tokens)
+        if extra_flags.strip():
+            args.extend(shlex.split(extra_flags))
 
         args.extend([image, "sleep", "infinity"])
 
@@ -265,12 +228,10 @@ class PodmanBackend(Backend):
         capture_output: bool = True,
     ) -> CommandResult:
         self._start_if_needed(name)
-
         args = ["podman", "exec"]
+
         if as_user:
-            host_uid = os.getuid()
-            host_gid = os.getgid()
-            host_user = os.environ.get("USER") or str(host_uid)
+            host_uid, host_gid, host_user = self._get_host_identity()
             args.extend(
                 [
                     "--user",
@@ -291,8 +252,7 @@ class PodmanBackend(Backend):
         return result
 
     def fix_home_permissions(self, name: str, home_dir: str) -> None:
-        host_uid = os.getuid()
-        host_gid = os.getgid()
+        host_uid, host_gid, _ = self._get_host_identity()
 
         self._start_if_needed(name)
         self._ensure_user(name, home_dir)
@@ -311,9 +271,7 @@ class PodmanBackend(Backend):
 
     def enter(self, name: str) -> int:
         preferred_shell = Path(os.environ.get("SHELL", "/bin/sh")).name
-        host_uid = os.getuid()
-        host_gid = os.getgid()
-        host_user = os.environ.get("USER") or str(host_uid)
+        host_uid, host_gid, host_user = self._get_host_identity()
 
         home_dir = self._container_home(name) or os.environ.get("HOME", "/")
         self._start_if_needed(name)
