@@ -131,10 +131,6 @@ def run_apply(yaml_arg: str | None) -> int:
             state.save_packages(name, desired_packages)
 
         if needs_recreate and config.run:
-            if backend_name == "podman":
-                step("Normalizing home directory ownership for user commands...")
-                backend.fix_home_permissions(name, home_dir)
-
             step("Running post-install commands...")
             for command_line in config.run:
                 step(f"  $ {command_line}")

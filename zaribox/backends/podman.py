@@ -81,11 +81,10 @@ class PodmanBackend(Backend):
         setup_script = f"""
             getent group {host_gid} >/dev/null 2>&1 || groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true
             getent passwd {host_uid} >/dev/null 2>&1 || useradd -m -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true
-            if command -v sudo >/dev/null 2>&1; then
-                mkdir -p /etc/sudoers.d
-                echo {shlex.quote(f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL")} > /etc/sudoers.d/90-zaribox-user
-                chmod 0440 /etc/sudoers.d/90-zaribox-user
-            fi
+
+            mkdir -p /etc/sudoers.d
+            echo {shlex.quote(f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL")} > /etc/sudoers.d/90-zaribox-user
+            chmod 0440 /etc/sudoers.d/90-zaribox-user
         """
         self._exec_in_container(name, setup_script)
 
@@ -105,10 +104,13 @@ class PodmanBackend(Backend):
         home_dir: str,
         extra_flags: str = "",
     ) -> None:
+        os.makedirs(home_dir, exist_ok=True)
+        home_dir = home_dir.rstrip("/")
         _, _, host_user = self._get_host_identity()
         mnt_rw_rslave = self._mount_opts("rw,rslave")
         mnt_ro = self._mount_opts("ro")
         mnt_home = self._mount_opts("rslave")
+        host_actual_home = os.environ.get("HOME", "")
 
         args = [
             "podman",
@@ -138,6 +140,12 @@ class PodmanBackend(Backend):
             "--volume",
             f"{home_dir}:{home_dir}:{mnt_home}",
         ]
+
+        if host_actual_home and host_actual_home != home_dir:
+            args.extend([
+                "--volume",
+                f"{host_actual_home}:{host_actual_home}:{mnt_home}"
+                ])
 
         if self._is_rootless():
             args.extend(["--userns", "keep-id"])
@@ -250,24 +258,6 @@ class PodmanBackend(Backend):
         if check and result.returncode != 0:
             self._raise_on_failure(result, "podman exec")
         return result
-
-    def fix_home_permissions(self, name: str, home_dir: str) -> None:
-        host_uid, host_gid, _ = self._get_host_identity()
-
-        self._start_if_needed(name)
-        self._ensure_user(name, home_dir)
-        result = run_command(
-            [
-                "podman",
-                "exec",
-                name,
-                "sh",
-                "-lc",
-                f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)}",
-            ],
-            capture_output=True,
-        )
-        self._raise_on_failure(result, "podman fix home permissions")
 
     def enter(self, name: str) -> int:
         preferred_shell = Path(os.environ.get("SHELL", "/bin/sh")).name
