@@ -15,7 +15,7 @@
         in {
           default = pkgs.python3Packages.buildPythonApplication {
             pname = "zaribox";
-            version = "0.1.6.2";
+            version = "0.1.7";
             src = ./.;
             format = "pyproject";
 
