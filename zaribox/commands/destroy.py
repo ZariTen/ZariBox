@@ -8,7 +8,12 @@ from ..state import StateStore
 
 def run_destroy(yaml_arg: str | None) -> int:
     try:
-        yaml_path = resolve_yaml(yaml_arg)
+        state = StateStore()
+        resolved = state.yaml_path_for(yaml_arg) if yaml_arg else None
+        if resolved is None:
+            err(f"No known container '{yaml_arg}'.")
+            return 1
+        yaml_path = resolve_yaml(str(resolved))
         config = load_config(yaml_path)
         backend_name = resolve_backend(config)
         backend = make_backend(backend_name)
