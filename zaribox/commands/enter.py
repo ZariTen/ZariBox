@@ -10,7 +10,11 @@ from .apply import run_apply
 
 
 def run_enter(yaml_arg: str | None) -> int:
-    if yaml_arg and not yaml_arg.endswith((".yml", ".yaml")) and not Path(yaml_arg).exists():
+    if (
+        yaml_arg
+        and not yaml_arg.endswith((".yml", ".yaml"))
+        and not Path(yaml_arg).exists()
+    ):
         state = StateStore()
         resolved = state.yaml_path_for(yaml_arg)
         if resolved is None:

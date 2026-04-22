@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import argparse
 import sys
 from typing import Callable, Sequence
+
 from . import __version__
 from .commands.apply import run_apply
 from .commands.destroy import run_destroy

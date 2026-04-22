@@ -68,14 +68,16 @@ class StateStore:
     def save_yaml_path(self, name: str, yaml_path: Path) -> None:
         self.yaml_path_cache_path(name).write_text(str(yaml_path), encoding="utf-8")
 
+
 def _normalize_image(image: str) -> str:
     image = image.strip()
     for prefix in ("docker.io/library/", "docker.io/"):
         if image.startswith(prefix):
-            image = image[len(prefix):]
+            image = image[len(prefix) :]
     if ":" not in image:
         image += ":latest"
     return image
+
 
 def container_identity_hash(config: ZariConfig) -> str:
     payload = f"{_normalize_image(config.image)}\n{config.home_dir or ''}\n{config.extra_flags}\n"
