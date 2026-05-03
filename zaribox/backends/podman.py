@@ -142,10 +142,9 @@ class PodmanBackend(Backend):
         ]
 
         if host_actual_home and host_actual_home != home_dir:
-            args.extend([
-                "--volume",
-                f"{host_actual_home}:{host_actual_home}:{mnt_home}"
-                ])
+            args.extend(
+                ["--volume", f"{host_actual_home}:{host_actual_home}:{mnt_home}"]
+            )
 
         if self._is_rootless():
             args.extend(["--userns", "keep-id"])
@@ -240,6 +239,7 @@ class PodmanBackend(Backend):
 
         if as_user:
             host_uid, host_gid, host_user = self._get_host_identity()
+            home_dir = self._container_home(name)
             args.extend(
                 [
                     "--user",
@@ -248,6 +248,8 @@ class PodmanBackend(Backend):
                     f"USER={host_user}",
                     "--env",
                     f"LOGNAME={host_user}",
+                    "--env",
+                    f"HOME={home_dir}",
                 ]
             )
         else:
