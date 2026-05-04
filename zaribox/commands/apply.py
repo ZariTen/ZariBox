@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ..backends import Backend, make_backend
@@ -8,9 +9,11 @@ from ..logging import BOLD, CYN, DIM, RST, err, log, ok, step, warn
 from ..pkgmgr import detect_pkgmgr, install_cmd, remove_cmd
 from ..state import StateStore, container_identity_hash, package_drift
 
+DATA_DIR = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+
 
 def _default_home(name: str) -> str:
-    return str(Path.home() / ".local" / "share" / "zaribox" / "homes" / name)
+    return str(DATA_DIR / "zaribox" / "homes" / name)
 
 
 def _run_package_install(

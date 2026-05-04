@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 
 from .models import ZariConfig
 
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
 
 class StateStore:
-    def __init__(self, base_dir: Path | None = None) -> None:
-        root = base_dir or (Path.home() / ".local" / "share" / "zaribox")
-        self.cache_dir = root / "cache"
+    def __init__(self) -> None:
+        self.cache_dir = CONFIG_DIR / "zaribox" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def container_hash_path(self, name: str) -> Path:
