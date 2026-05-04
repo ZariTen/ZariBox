@@ -6,12 +6,14 @@ from pathlib import Path
 
 from .models import ZariConfig
 
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+def _config_dir() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 
 
 class StateStore:
     def __init__(self) -> None:
-        self.cache_dir = CONFIG_DIR / "zaribox" / "cache"
+        self.cache_dir = _config_dir() / "zaribox" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def container_hash_path(self, name: str) -> Path:
