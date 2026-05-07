@@ -40,6 +40,10 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def post_install(self, name: str, home_dir: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def enter(self, name: str) -> int:
         raise NotImplementedError
 

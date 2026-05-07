@@ -80,7 +80,7 @@ class PodmanBackend(Backend):
 
         setup_script = f"""
             getent group {host_gid} >/dev/null 2>&1 || groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true
-            getent passwd {host_uid} >/dev/null 2>&1 || useradd -m -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || adduser -D -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true
+            getent passwd {host_uid} >/dev/null 2>&1 || useradd -M -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || adduser -H -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true
 
             mkdir -p /etc/sudoers.d
             echo {shlex.quote(f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL")} > /etc/sudoers.d/90-zaribox-user
@@ -296,6 +296,12 @@ class PodmanBackend(Backend):
             check=False,
         )
         return result.returncode
+
+    def post_install(self, name: str, home_dir: str) -> None:
+        host_uid, host_gid, _ = self._get_host_identity()
+        self._exec_in_container(
+            name, f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)}"
+        )
 
     def stop(self, name: str) -> None:
         result = run_command(["podman", "stop", name], capture_output=True)

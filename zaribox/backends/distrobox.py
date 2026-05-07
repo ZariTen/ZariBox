@@ -87,6 +87,9 @@ class DistroboxBackend(Backend):
             )
         return result
 
+    def post_install(self, name: str, home_dir: str) -> None:
+        pass
+
     def enter(self, name: str) -> int:
         result = subprocess.run(["distrobox", "enter", name], check=False)
         return result.returncode

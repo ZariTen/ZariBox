@@ -145,6 +145,7 @@ def run_apply(yaml_arg: str | None) -> int:
                     as_user=True,
                     capture_output=False,
                 )
+            backend.post_install(name, home_dir)
             ok("Post-install commands done")
 
     except RuntimeError as exc:
