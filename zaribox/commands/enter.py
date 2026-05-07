@@ -9,21 +9,21 @@ from ..state import StateStore
 from .apply import run_apply
 
 
-def run_enter(yaml_arg: str | None) -> int:
+def run_enter(container_name: str | None) -> int:
     if (
-        yaml_arg
-        and not yaml_arg.endswith((".yml", ".yaml"))
-        and not Path(yaml_arg).exists()
+        container_name
+        and not container_name.endswith((".yml", ".yaml"))
+        and not Path(container_name).exists()
     ):
-        state = StateStore()
-        resolved = state.yaml_path_for(yaml_arg)
+        state = StateStore(container_name)
+        resolved = state.yaml_path_for(container_name)
         if resolved is None:
-            err(f"No known container '{yaml_arg}'. Run apply first.")
+            err(f"No known container '{container_name}'. Run apply first.")
             return 1
-        yaml_arg = str(resolved)
+        container_name = str(resolved)
 
     try:
-        yaml_path = resolve_yaml(yaml_arg)
+        yaml_path = resolve_yaml(container_name)
         config = load_config(yaml_path)
         backend_name = resolve_backend(config)
         backend = make_backend(backend_name)

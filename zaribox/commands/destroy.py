@@ -6,12 +6,12 @@ from ..logging import BOLD, RED, RST, err, log, ok, warn
 from ..state import StateStore
 
 
-def run_destroy(yaml_arg: str | None) -> int:
+def run_destroy(container_name: str) -> int:
     try:
-        state = StateStore()
-        resolved = state.yaml_path_for(yaml_arg) if yaml_arg else None
+        state = StateStore(container_name)
+        resolved = state.yaml_path_for(container_name)
         if resolved is None:
-            err(f"No known container '{yaml_arg}'.")
+            err(f"No known container '{container_name}'.")
             return 1
         yaml_path = resolve_yaml(str(resolved))
         config = load_config(yaml_path)
@@ -45,7 +45,7 @@ def run_destroy(yaml_arg: str | None) -> int:
         except RuntimeError:
             pass
         backend.rm(name)
-        StateStore().clear_cache(name)
+        StateStore(container_name).clear_cache(name)
         ok(f"Container '{name}' destroyed. Home dir preserved.")
         return 0
     except RuntimeError as exc:

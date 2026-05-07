@@ -55,7 +55,7 @@ def run_apply(yaml_arg: str | None) -> int:
     name = config.name
     home_dir = config.home_dir or _default_home(name)
     desired_packages = config.packages
-    state = StateStore()
+    state = StateStore(name)
     state.save_yaml_path(name, yaml_path.resolve())
 
     current_id_hash = container_identity_hash(config)

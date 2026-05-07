@@ -37,7 +37,7 @@ Run:
 
 def test_state_helpers_track_identity_and_drift(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    store = StateStore()
+    store = StateStore("testbox")
     yaml_path = tmp_path / "devbox.yaml"
     yaml_path.write_text("Image: archlinux\n", encoding="utf-8")
 

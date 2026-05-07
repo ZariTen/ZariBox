@@ -12,37 +12,41 @@ def _config_dir() -> Path:
 
 
 class StateStore:
-    def __init__(self) -> None:
-        self.cache_dir = _config_dir() / "zaribox" / "cache"
+    def __init__(self, container_name: str = "") -> None:
+        self.cache_dir = (
+            _config_dir() / "zaribox" / container_name
+            if container_name != ""
+            else _config_dir() / "zaribox"
+        )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def container_hash_path(self, name: str) -> Path:
-        return self.cache_dir / f"{name}.container.hash"
+    def container_hash_path(self, container_name: str) -> Path:
+        return self.cache_dir / f"{container_name}.hash"
 
-    def packages_path(self, name: str) -> Path:
-        return self.cache_dir / f"{name}.packages"
+    def packages_path(self, container_name: str) -> Path:
+        return self.cache_dir / f"{container_name}.packages"
 
-    def yaml_path_cache_path(self, name: str) -> Path:
-        return self.cache_dir / f"{name}.yaml_path"
+    def yaml_path_cache_path(self, container_name: str) -> Path:
+        return self.cache_dir / f"{container_name}.yaml_path"
 
-    def saved_container_hash(self, name: str) -> str:
-        path = self.container_hash_path(name)
+    def saved_container_hash(self, container_name: str) -> str:
+        path = self.container_hash_path(container_name)
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8").strip()
 
-    def save_container_hash(self, name: str, value: str) -> None:
-        self.container_hash_path(name).write_text(value, encoding="utf-8")
+    def save_container_hash(self, container_name: str, value: str) -> None:
+        self.container_hash_path(container_name).write_text(value, encoding="utf-8")
 
-    def saved_packages(self, name: str) -> list[str]:
-        path = self.packages_path(name)
+    def saved_packages(self, container_name: str) -> list[str]:
+        path = self.packages_path(container_name)
         if not path.exists():
             return []
         lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
         return [line for line in lines if line]
 
-    def save_packages(self, name: str, packages: list[str]) -> None:
-        path = self.packages_path(name)
+    def save_packages(self, container_name: str, packages: list[str]) -> None:
+        path = self.packages_path(container_name)
         if not packages:
             path.write_text("", encoding="utf-8")
             return
@@ -52,25 +56,27 @@ class StateStore:
         )
         path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
 
-    def clear_cache(self, name: str) -> None:
+    def clear_cache(self, container_name: str) -> None:
         for path in (
-            self.container_hash_path(name),
-            self.packages_path(name),
-            self.yaml_path_cache_path(name),
+            self.container_hash_path(container_name),
+            self.packages_path(container_name),
+            self.yaml_path_cache_path(container_name),
         ):
             try:
                 path.unlink()
             except FileNotFoundError:
                 continue
 
-    def yaml_path_for(self, name: str) -> Path | None:
-        path = self.yaml_path_cache_path(name)
+    def yaml_path_for(self, container_name: str) -> Path | None:
+        path = self.yaml_path_cache_path(container_name)
         if not path.exists():
             return None
         return Path(path.read_text(encoding="utf-8").strip())
 
-    def save_yaml_path(self, name: str, yaml_path: Path) -> None:
-        self.yaml_path_cache_path(name).write_text(str(yaml_path), encoding="utf-8")
+    def save_yaml_path(self, container_name: str, yaml_path: Path) -> None:
+        self.yaml_path_cache_path(container_name).write_text(
+            str(yaml_path), encoding="utf-8"
+        )
 
 
 def _normalize_image(image: str) -> str:

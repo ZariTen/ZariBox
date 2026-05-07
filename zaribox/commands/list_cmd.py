@@ -24,13 +24,14 @@ def run_list() -> int:
     print()
 
     found_any = False
-    for hash_file in sorted(state.cache_dir.glob("*.container.hash")):
-        found_any = True
-        name = hash_file.name.removesuffix(".container.hash")
-        if backend.container_exists(name):
-            print(f"  {GRN}+{RST}  {name}")
-        else:
-            print(f"  {RED}-{RST}  {name}  {DIM}(not running){RST}")
+    for containers in state.cache_dir.iterdir():
+        for hash_file in sorted(containers.glob("*.hash")):
+            found_any = True
+            name = hash_file.name.removesuffix(".hash")
+            if backend.container_exists(name):
+                print(f"  {GRN}+{RST}  {name}")
+            else:
+                print(f"  {RED}-{RST}  {name}  {DIM}(not running){RST}")
 
     if not found_any:
         print(f"  {DIM}(none){RST}")

@@ -6,9 +6,9 @@ from ..logging import CYN, DIM, GRN, RED, RST, YLW, err
 from ..state import StateStore, container_identity_hash, package_drift
 
 
-def run_status(yaml_arg: str | None) -> int:
+def run_status(container_name: str) -> int:
     try:
-        yaml_path = resolve_yaml(yaml_arg)
+        yaml_path = resolve_yaml(container_name)
         config = load_config(yaml_path)
         backend_name = resolve_backend(config)
         backend = make_backend(backend_name)
@@ -20,7 +20,7 @@ def run_status(yaml_arg: str | None) -> int:
         err(f"{backend_name} backend is not installed or not in PATH.")
         return 1
 
-    state = StateStore()
+    state = StateStore(container_name)
     current_hash = container_identity_hash(config)
     saved_hash = state.saved_container_hash(config.name)
     desired_packages = config.packages
