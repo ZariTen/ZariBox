@@ -1,0 +1,100 @@
+name: Release on Version Change
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "zaribox/__init__.py"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Extract current version
+        id: current_version
+        run: |
+          VERSION=$(python -c "import zaribox; print(zaribox.__version__)")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Extract previous version from git tag
+        id: previous_version
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            echo "previous_version=" >> $GITHUB_OUTPUT
+            echo "No previous tags found"
+          else
+            PREV_VERSION=${PREV_TAG#v}
+            echo "previous_version=$PREV_VERSION" >> $GITHUB_OUTPUT
+            echo "Previous version: $PREV_VERSION"
+          fi
+
+      - name: Check if version has changed
+        id: version_check
+        run: |
+          CURRENT="${{ steps.current_version.outputs.version }}"
+          PREVIOUS="${{ steps.previous_version.outputs.previous_version }}"
+
+          if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
+            echo "Tag v${CURRENT} already exists — skipping release"
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "Version has changed from $PREVIOUS to $CURRENT"
+          else
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+            echo "Version has not changed"
+          fi
+
+      - name: Generate release notes
+        if: steps.version_check.outputs.version_changed == 'true'
+        run: |
+          PREV_TAG="${{ steps.previous_version.outputs.previous_version }}"
+          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+
+          if [ -z "$PREV_TAG" ]; then
+            git log --oneline --pretty=format:"- %h: %s" > /tmp/changelog.txt
+          else
+            git log "v${PREV_TAG}..HEAD" --oneline --pretty=format:"- %h: %s" > /tmp/changelog.txt
+          fi
+
+          if [ ! -s /tmp/changelog.txt ]; then
+            echo "- Version bump to ${CURRENT_VERSION}" > /tmp/changelog.txt
+          fi
+
+      - name: Create Forgejo/Codeberg Release
+        if: steps.version_check.outputs.version_changed == 'true'
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_URL: ${{ github.api_url }}
+          REPO: ${{ github.repository }}
+          TAG: v${{ steps.current_version.outputs.version }}
+        run: |
+          jq -n \
+            --arg tag_name "$TAG" \
+            --arg name "$TAG" \
+            --rawfile body /tmp/changelog.txt \
+            '{tag_name: $tag_name, name: $name, body: ("## Changes\n\n" + $body), draft: false, prerelease: false}' > release.json
+
+          curl -X POST \
+            "${API_URL}/repos/${REPO}/releases" \
+            -H "Authorization: token ${GITEA_TOKEN}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d @release.json
