@@ -6,7 +6,7 @@
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
-      version = "0.1.8.1";
+      version = "0.1.9";
     in {
       packages = forAllSystems (system:
         let
@@ -19,7 +19,7 @@
               owner = "ZariTen";
               repo = "zaribox";
               rev = "v${version}";
-              hash = "sha256-SOEU3LbLEHHr1GWU3U3J2iPskTTyf/Sj8vTd64qDn0M=";
+              hash = "sha256-iioGnZz1AZOS/lieffoWPt6XOWoNNiTGyUMVpNxUuDU=";
             };
             format = "pyproject";
             nativeBuildInputs = with pkgs.python3Packages; [
