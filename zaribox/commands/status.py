@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from ..backends import make_backend
-from ..config import load_config, resolve_backend, resolve_yaml
+from ..config import load_context
 from ..logging import CYN, DIM, GRN, RED, RST, YLW, err
 from ..state import StateStore, container_identity_hash, package_drift
 
 
-def run_status(container_name: str) -> int:
+def run_status(container_name: str | None) -> int:
     try:
-        yaml_path = resolve_yaml(container_name)
-        config = load_config(yaml_path)
-        backend_name = resolve_backend(config)
-        backend = make_backend(backend_name)
+        if container_name is None:
+            err("container name is required")
+            return 1
+        state = StateStore(container_name)
+        resolved = state.yaml_path_for(container_name)
+        yaml_path, config, backend_name, backend = load_context(resolved)
     except (ValueError, RuntimeError) as exc:
         err(str(exc))
         return 1
@@ -39,7 +40,7 @@ def run_status(container_name: str) -> int:
     if current_hash == saved_hash:
         print(f"  container: {GRN}in sync{RST}")
     else:
-        print(f"  container: {YLW}changed -- will recreate on apply{RST}")
+        print(f"  container: {YLW}changed{RST}")
 
     if not to_install and not to_remove:
         print(f"  packages : {GRN}in sync{RST}")
