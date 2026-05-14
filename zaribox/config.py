@@ -6,7 +6,16 @@ from typing import cast
 
 import yaml
 
+from .backends import make_backend
 from .models import ZariConfig
+
+
+def load_context(yaml_arg):
+    yaml_path = resolve_yaml(yaml_arg)
+    config = load_config(yaml_path)
+    backend_name = resolve_backend(config)
+    backend = make_backend(backend_name)
+    return yaml_path, config, backend_name, backend
 
 
 def _resolve_image(image: str) -> str:

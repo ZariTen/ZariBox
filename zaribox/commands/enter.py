@@ -6,7 +6,6 @@ from ..backends import make_backend
 from ..config import load_config, resolve_backend, resolve_yaml
 from ..logging import err, log, warn
 from ..state import StateStore
-from .apply import run_apply
 
 
 def run_enter(container_name: str | None) -> int:
@@ -18,7 +17,7 @@ def run_enter(container_name: str | None) -> int:
         state = StateStore(container_name)
         resolved = state.yaml_path_for(container_name)
         if resolved is None:
-            err(f"No known container '{container_name}'. Run apply first.")
+            err(f"No known container '{container_name}'. Run create first.")
             return 1
         container_name = str(resolved)
 
@@ -39,10 +38,7 @@ def run_enter(container_name: str | None) -> int:
 
     try:
         if not backend.container_exists(name):
-            warn(f"Container '{name}' does not exist. Running apply first...")
-            apply_status = run_apply(str(yaml_path))
-            if apply_status != 0:
-                return apply_status
+            warn(f"Container '{name}' does not exist.")
 
         log(f"Entering '{name}'...")
         return backend.enter(name)
