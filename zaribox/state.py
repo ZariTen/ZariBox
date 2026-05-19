@@ -71,12 +71,16 @@ class StateStore:
         path = self.yaml_path_cache_path(container_name)
         if not path.exists():
             return None
-        return Path(path.read_text(encoding="utf-8").strip())
+        raw = path.read_text(encoding="utf-8").strip()
+        return Path(raw).expanduser()
 
     def save_yaml_path(self, container_name: str, yaml_path: Path) -> None:
-        self.yaml_path_cache_path(container_name).write_text(
-            str(yaml_path), encoding="utf-8"
-        )
+        try:
+            relative = yaml_path.relative_to(Path.home())
+            stored = f"~/{relative}"
+        except ValueError:
+            stored = str(yaml_path)
+        self.yaml_path_cache_path(container_name).write_text(stored, encoding="utf-8")
 
 
 def _normalize_image(image: str) -> str:
