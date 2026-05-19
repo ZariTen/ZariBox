@@ -17,7 +17,7 @@ def _default_home(name: str) -> str:
     return str(_default_data_dir() / "zaribox" / "home" / name)
 
 
-def run_create(yaml_arg: str | None) -> int:
+def run_create(yaml_arg: str) -> int:
     try:
         yaml_path, config, backend_name, backend = load_context(yaml_arg)
     except (ValueError, RuntimeError) as exc:
