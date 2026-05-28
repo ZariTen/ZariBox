@@ -9,8 +9,7 @@ def run_enter(container_name: str) -> int:
     try:
         state = StateStore(container_name)
         resolved = state.yaml_path_for(container_name)
-        container_name = str(resolved)
-        yaml_path, config, backend_name, backend = load_context(container_name)
+        yaml_path, config, backend_name, backend = load_context(resolved)
     except (ValueError, RuntimeError) as exc:
         err(str(exc))
         return 1
@@ -20,11 +19,9 @@ def run_enter(container_name: str) -> int:
         return 1
 
     name = config.name
-
     try:
         if not backend.container_exists(name):
             warn(f"Container '{name}' does not exist.")
-
         log(f"Entering '{name}'...")
         return backend.enter(name)
     except RuntimeError as exc:

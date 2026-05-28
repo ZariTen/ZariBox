@@ -25,15 +25,7 @@ def _run_package_remove(
     ok(f"Removed: {' '.join(packages)}")
 
 
-def run_sync(container_name: str) -> int:
-    try:
-        state = StateStore(container_name)
-        resolved = state.yaml_path_for(container_name)
-        yaml_path, config, backend_name, backend = load_context(resolved)
-    except (ValueError, RuntimeError) as exc:
-        err(str(exc))
-        return 1
-
+def _sync_from_config(config, backend, backend_name: str) -> int:
     if not backend.runtime_present():
         err(f"{backend_name} is not installed or not in PATH.")
         return 1
@@ -65,3 +57,15 @@ def run_sync(container_name: str) -> int:
     state.save_packages(name, desired)
     ok("Packages synced.")
     return 0
+
+
+def run_sync(container_name: str) -> int:
+    try:
+        state = StateStore(container_name)
+        resolved = state.yaml_path_for(container_name)
+        yaml_path, config, backend_name, backend = load_context(resolved)
+    except (ValueError, RuntimeError) as exc:
+        err(str(exc))
+        return 1
+
+    return _sync_from_config(config, backend, backend_name)
