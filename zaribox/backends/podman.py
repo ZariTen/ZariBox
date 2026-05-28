@@ -32,8 +32,15 @@ class PodmanBackend(Backend):
         if command_exists("getenforce"):
             result = run_command(["getenforce"], capture_output=True)
             if result.returncode == 0:
-                return result.stdout.strip() != "Disabled"
-        return Path("/sys/fs/selinux/enforce").exists()
+                return result.stdout.strip() in ("Enforcing", "Permissive")
+
+        enforce_path = Path("/sys/fs/selinux/enforce")
+        if enforce_path.exists():
+            try:
+                return enforce_path.read_text().strip() == "1"
+            except Exception:
+                return False
+        return False
 
     def _mount_opts(self, opts: str) -> str:
         if (
@@ -79,14 +86,27 @@ class PodmanBackend(Backend):
         self._start_if_needed(name)
 
         setup_script = f"""
-            getent group {host_gid} >/dev/null 2>&1 || groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || true
-            getent passwd {host_uid} >/dev/null 2>&1 || useradd -M -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || adduser -H -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} {shlex.quote(host_user)} 2>/dev/null || true
+        if ! getent group {host_gid} >/dev/null 2>&1; then
+            groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || \
+            addgroup -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || \
+            echo "{shlex.quote(host_user)}:x:{host_gid}:" >> /etc/group
+        fi
 
-            mkdir -p /etc/sudoers.d
-            echo {shlex.quote(f"{host_user} ALL=(ALL:ALL) NOPASSWD:ALL")} > /etc/sudoers.d/90-zaribox-user
-            chmod 0440 /etc/sudoers.d/90-zaribox-user
+        if ! getent passwd {host_uid} >/dev/null 2>&1; then
+            useradd -M -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null || \
+            adduser -H -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} -D {shlex.quote(host_user)} 2>/dev/null || \
+            echo "{shlex.quote(host_user)}:x:{host_uid}:{host_gid}:::{shlex.quote(home_dir)}:/bin/sh" >> /etc/passwd
+        fi
+
+        mkdir -p /etc/sudoers.d
+        echo "{shlex.quote(host_user)} ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-zaribox-user
+        chmod 0440 /etc/sudoers.d/90-zaribox-user
         """
-        self._exec_in_container(name, setup_script)
+        result = self._exec_in_container(name, setup_script)
+        if result.returncode != 0:
+            self._raise_on_failure(
+                result, f"Failed to initialize user inside container '{name}'"
+            )
 
     def container_exists(self, name: str) -> bool:
         if not self.runtime_present():
@@ -165,12 +185,13 @@ class PodmanBackend(Backend):
                 Path(os.environ.get("HOME", ""), ".Xauthority")
             )
             if Path(xauth).is_file():
+                container_xauth = "/tmp/.container_xauth"
                 args.extend(
                     [
                         "--env",
-                        f"XAUTHORITY={xauth}",
+                        f"XAUTHORITY={container_xauth}",
                         "--volume",
-                        f"{xauth}:{xauth}:{mnt_ro}",
+                        f"{xauth}:{container_xauth}:{mnt_ro}",
                     ]
                 )
 
@@ -272,8 +293,8 @@ class PodmanBackend(Backend):
         shell_cmd = (
             f"if command -v {shlex.quote(preferred_shell)} >/dev/null 2>&1; then "
             f"exec {shlex.quote(preferred_shell)} -l; "
-            "elif command -v bash >/dev/null 2>&1; then exec bash -l; "
-            "else exec sh -l; fi"
+            f"elif command -v bash >/dev/null 2>&1; then exec bash -l; "
+            f"else exec sh -l; fi"
         )
         result = subprocess.run(
             [
@@ -299,8 +320,14 @@ class PodmanBackend(Backend):
 
     def post_install(self, name: str, home_dir: str) -> None:
         host_uid, host_gid, _ = self._get_host_identity()
+        host_actual_home = os.environ.get("HOME", "").rstrip("/")
+        target_home = home_dir.rstrip("/")
+
+        if target_home == host_actual_home or target_home == "":
+            return
+
         self._exec_in_container(
-            name, f"chown -R {host_uid}:{host_gid} {shlex.quote(home_dir)}"
+            name, f"chown {host_uid}:{host_gid} {shlex.quote(target_home)}"
         )
 
     def stop(self, name: str) -> None:
