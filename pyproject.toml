@@ -1,12 +1,18 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "zaribox"
 dynamic = ["version"]
 description = "Declarative Distrobox manager"
+readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "GPL-3.0"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+]
 dependencies = [
     "PyYAML>=6.0",
 ]
@@ -14,16 +20,11 @@ dependencies = [
 [project.scripts]
 zaribox = "zaribox.cli:main"
 
-[tool.setuptools]
-
-[tool.setuptools.packages.find]
-include = ["zaribox", "zaribox.*"]
-
 [tool.setuptools.dynamic]
 version = {attr = "zaribox.__version__"}
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
-    "flake8",
+    "pytest>=8.0",
+    "ruff",
 ]
