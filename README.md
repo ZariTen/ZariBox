@@ -11,14 +11,22 @@ Declarative container manager for reproducible dev boxes. Reads a YAML file and 
 ## Commands
 
 ```bash
+zaribox create  [file.yaml]
 zaribox status  [container]
 zaribox list
-zaribox apply   [file.yaml]
+zaribox sync    [container]
 zaribox enter   [container]
 zaribox destroy [container]
 ```
 
-Auto-selects the only `*.yaml`/`*.yml` in the current directory if no file is passed.
+- **`create`** — Create a new container from a YAML config
+- **`status`** — Show sync status with package drift
+- **`list`** — List all ZariBox-managed containers
+- **`sync`** — Sync container to match config
+- **`enter`** — Enter container (auto-apply if needed)
+- **`destroy`** — Remove container (home dir preserved)
+
+Auto-selects the only `*.yaml`/`*.yml` in the current directory if no file is passed to `create`.
 
 ## YAML
 
