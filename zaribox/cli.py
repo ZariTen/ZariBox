@@ -9,6 +9,7 @@ from .commands.create import run_create
 from .commands.destroy import run_destroy
 from .commands.enter import run_enter
 from .commands.list_cmd import run_list
+from .commands.pull import run_pull
 from .commands.status import run_status
 from .commands.sync import run_sync
 from .logging import CYN, GRN, RST, err
@@ -18,6 +19,7 @@ _COMMANDS: list[tuple[str, str, str | None, Callable[..., int]]] = [
     ("status", "Show sync status with package drift", "container", run_status),
     ("list", "List all ZariBox-managed containers", None, run_list),
     ("sync", "Sync container to match config", "container", run_sync),
+    ("pull", "Sync packages from container into config file", "container", run_pull),
     ("enter", "Enter container (auto-apply if needed)", "container", run_enter),
     ("destroy", "Remove container (home dir preserved)", "container", run_destroy),
 ]
@@ -61,14 +63,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = parser.parse_args(parsed_argv)
     except SystemExit:
-        _print_help()
         return 1
 
     dispatch = {name: (arg_name, handler) for name, _, arg_name, handler in _COMMANDS}
 
     if args.command not in dispatch:
         err(f"Unknown command: {args.command}")
-        _print_help()
         return 1
 
     arg_name, handler = dispatch[args.command]

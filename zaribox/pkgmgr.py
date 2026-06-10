@@ -1,12 +1,28 @@
 from __future__ import annotations
 
-_PKG_MANAGERS: dict[str, tuple[str, str]] = {
-    "pacman": ('pacman -Syu --noconfirm "$@"', 'pacman -Rns --noconfirm "$@"'),
-    "apt": ('apt-get install -y "$@"', 'apt-get remove -y "$@"'),
-    "dnf": ('dnf install -y "$@"', 'dnf remove -y "$@"'),
-    "zypper": ('zypper install -y "$@"', 'zypper remove -y "$@"'),
-    "apk": ('apk add "$@"', 'apk del "$@"'),
-    "xbps": ('xbps-install -y "$@"', 'xbps-remove -y "$@"'),
+_PKG_MANAGERS: dict[str, tuple[str, str, list[str]]] = {
+    "pacman": (
+        'pacman -Syu --noconfirm "$@"',
+        'pacman -Rns --noconfirm "$@"',
+        ["pacman", "-Qen"],
+    ),
+    "apt": (
+        'apt-get install -y "$@"',
+        'apt-get remove -y "$@"',
+        ["apt-mark", "showmanual"],
+    ),
+    "dnf": (
+        'dnf install -y "$@"',
+        'dnf remove -y "$@"',
+        ["dnf", "repoquery", "--userinstalled"],
+    ),
+    "zypper": (
+        'zypper install -y "$@"',
+        'zypper remove -y "$@"',
+        ["zypper", "packages", "--userinstalled"],
+    ),
+    "apk": ('apk add "$@"', 'apk del "$@"', ["apk", "info", "-q"]),
+    "xbps": ('xbps-install -y "$@"', 'xbps-remove -y "$@"', ["xbps-query", "-m"]),
 }
 
 _PREFIX_MAP: list[tuple[tuple[str, ...], str]] = [
@@ -35,3 +51,7 @@ def install_cmd(mgr: str) -> str:
 
 def remove_cmd(mgr: str) -> str:
     return _PKG_MANAGERS.get(mgr, _PKG_MANAGERS[_DEFAULT])[1]
+
+
+def list_cmd(mgr: str) -> list[str]:
+    return _PKG_MANAGERS.get(mgr, _PKG_MANAGERS[_DEFAULT])[2]

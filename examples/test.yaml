@@ -9,13 +9,13 @@ Image: archlinux
 HomeDir: /home/$USER/Documents/Testbox/
 
 Packages:
+  - base
   - base-devel
+  - fish
   - git
   - neovim
-  - starship
-  - fish
   - python
-
+  - starship
 # Optional: commands to run after package install
 Run:
   - rm -rf ~/yay && git clone https://aur.archlinux.org/yay-bin.git ~/yay && cd ~/yay && makepkg -si --noconfirm
