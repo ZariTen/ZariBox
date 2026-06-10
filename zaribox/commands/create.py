@@ -82,5 +82,5 @@ def run_create(yaml_arg: str) -> int:
         ok("Post-install commands done")
 
     ok(f"Container '{name}' is ready.")
-    log(f"Run: zaribox enter {yaml_path}")
+    log(f"Run: zaribox enter {name}")
     return 0
