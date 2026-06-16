@@ -17,7 +17,7 @@ zaribox list
 zaribox export    [container]
 zaribox apply    [container]
 zaribox enter   [container]
-zaribox destroy [container]
+zaribox remove [container]
 ```
 
 - **`create`** — Create a new container from a YAML config
@@ -26,7 +26,7 @@ zaribox destroy [container]
 - **`export`** — Sync packages from container into config file
 - **`apply`** — Sync container to match config
 - **`enter`** — Enter container (auto-apply if needed)
-- **`destroy`** — Remove container (home dir preserved)
+- **`remove`** — Remove container (home dir preserved)
 
 Auto-selects the only `*.yaml`/`*.yml` in the current directory if no file is passed to `create`.
 
