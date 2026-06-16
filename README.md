@@ -10,16 +10,6 @@ Declarative container manager for reproducible dev boxes. Reads a YAML file and 
 
 ## Commands
 
-```bash
-zaribox create  [file.yaml]
-zaribox status  [container]
-zaribox list
-zaribox export    [container]
-zaribox apply    [container]
-zaribox enter   [container]
-zaribox remove [container]
-```
-
 - **`create`** — Create a new container from a YAML config
 - **`status`** — Show sync status with package drift
 - **`list`** — List all ZariBox-managed containers
