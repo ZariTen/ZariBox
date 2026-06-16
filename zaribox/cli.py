@@ -9,7 +9,7 @@ from .commands.apply import run_sync
 from .commands.create import run_create
 from .commands.enter import run_enter
 from .commands.export import run_pull
-from .commands.list_cmd import run_list
+from .commands.list import run_list
 from .commands.remove import run_destroy
 from .commands.status import run_status
 from .logging import CYN, GRN, RST, err
