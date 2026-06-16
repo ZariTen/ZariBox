@@ -14,8 +14,8 @@ Declarative container manager for reproducible dev boxes. Reads a YAML file and 
 zaribox create  [file.yaml]
 zaribox status  [container]
 zaribox list
-zaribox pull    [container]
-zaribox sync    [container]
+zaribox export    [container]
+zaribox apply    [container]
 zaribox enter   [container]
 zaribox destroy [container]
 ```
@@ -23,8 +23,8 @@ zaribox destroy [container]
 - **`create`** — Create a new container from a YAML config
 - **`status`** — Show sync status with package drift
 - **`list`** — List all ZariBox-managed containers
-- **`pull`** — Sync packages from container into config file
-- **`sync`** — Sync container to match config
+- **`export`** — Sync packages from container into config file
+- **`apply`** — Sync container to match config
 - **`enter`** — Enter container (auto-apply if needed)
 - **`destroy`** — Remove container (home dir preserved)
 

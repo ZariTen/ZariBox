@@ -6,7 +6,7 @@ from pathlib import Path
 from ..config import load_context
 from ..logging import err, log, ok, step, warn
 from ..state import StateStore, container_identity_hash
-from .sync import _sync_from_config
+from .apply import _sync_from_config
 
 
 def _default_data_dir() -> Path:

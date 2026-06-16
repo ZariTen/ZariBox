@@ -5,21 +5,21 @@ import sys
 from typing import Callable, Sequence
 
 from . import __version__
+from .commands.apply import run_sync
 from .commands.create import run_create
 from .commands.destroy import run_destroy
 from .commands.enter import run_enter
+from .commands.export import run_pull
 from .commands.list_cmd import run_list
-from .commands.pull import run_pull
 from .commands.status import run_status
-from .commands.sync import run_sync
 from .logging import CYN, GRN, RST, err
 
 _COMMANDS: list[tuple[str, str, str | None, Callable[..., int]]] = [
     ("create", "Create a new container", "file.yaml", run_create),
     ("status", "Show sync status with package drift", "container", run_status),
     ("list", "List all ZariBox-managed containers", None, run_list),
-    ("sync", "Sync container to match config", "container", run_sync),
-    ("pull", "Sync packages from container into config file", "container", run_pull),
+    ("apply", "Sync container to match config", "container", run_sync),
+    ("export", "Sync packages from container into config file", "container", run_pull),
     ("enter", "Enter container (auto-apply if needed)", "container", run_enter),
     ("destroy", "Remove container (home dir preserved)", "container", run_destroy),
 ]
