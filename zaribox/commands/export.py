@@ -10,7 +10,6 @@ from ..state import StateStore
 def _fetch_installed_packages(backend: Backend, name: str, image: str) -> list[str]:
     mgr = detect_pkgmgr(image)
     cmd = list_cmd(mgr)
-    step(f"Fetching explicitly installed packages via {mgr}...")
     result = backend.exec(name, cmd, as_user=False, capture_output=True)
     return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
@@ -54,6 +53,7 @@ def run_pull(container_name: str) -> int:
         return 1
 
     try:
+        step("Fetching explicitly installed packages...")
         packages = _fetch_installed_packages(backend, name, config.image)
     except RuntimeError as exc:
         err(str(exc))
