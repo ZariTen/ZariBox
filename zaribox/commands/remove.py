@@ -9,8 +9,7 @@ def run_destroy(container_name: str) -> int:
     try:
         state = StateStore(container_name)
         resolved = state.yaml_path_for(container_name)
-        container_name = str(resolved)
-        yaml_path, config, backend_name, backend = load_context(container_name)
+        yaml_path, config, backend_name, backend = load_context(str(resolved))
     except (ValueError, RuntimeError) as exc:
         err(str(exc))
         return 1
@@ -39,7 +38,7 @@ def run_destroy(container_name: str) -> int:
         except RuntimeError:
             pass
         backend.rm(name)
-        StateStore(container_name).clear_cache(name)
+        state.clear_cache(name)
         ok(f"Container '{name}' destroyed. Home dir preserved.")
         return 0
     except RuntimeError as exc:

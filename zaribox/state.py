@@ -67,6 +67,11 @@ class StateStore:
             except FileNotFoundError:
                 continue
 
+        try:
+            self.cache_dir.rmdir()
+        except OSError:
+            pass
+
     def yaml_path_for(self, container_name: str) -> Path | None:
         path = self.yaml_path_cache_path(container_name)
         if not path.exists():
