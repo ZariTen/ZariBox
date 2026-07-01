@@ -1,5 +1,6 @@
 import sys
 
+from . import __version__
 from .commands.apply import run_sync
 from .commands.create import run_create
 from .commands.enter import run_enter
@@ -32,6 +33,7 @@ def main() -> int:
     }
 
     if not args or args[0] in ("-h", "--help", "help"):
+        print(f"ZariBox v{__version__}")
         print("\nUsage: zaribox <command> [arg]\n")
         print("Commands:")
         for name, (description, _) in commands.items():
