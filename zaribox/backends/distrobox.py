@@ -4,7 +4,7 @@ import shlex
 import subprocess
 from typing import Sequence
 
-from ..shell import CommandError, CommandResult, command_exists, run_command
+from ..shell import CommandResult, command_exists, run_command
 from .base import Backend
 
 
@@ -58,7 +58,7 @@ class DistroboxBackend(Backend):
 
         try:
             result = run_command(args, capture_output=False)
-        except CommandError as exc:
+        except subprocess.CalledProcessError as exc:
             raise RuntimeError(str(exc)) from exc
         self._raise_on_failure(result)
 

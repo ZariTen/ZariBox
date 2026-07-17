@@ -13,20 +13,6 @@ class CommandResult:
     stdout: str
     stderr: str
 
-
-class CommandError(RuntimeError):
-    def __init__(self, args: Sequence[str], returncode: int, stderr: str) -> None:
-        command_text = " ".join(args)
-        message = f"Command failed ({returncode}): {command_text}"
-        stderr_text = stderr.strip()
-        if stderr_text:
-            message = f"{message}\n{stderr_text}"
-        super().__init__(message)
-        self.args_list = list(args)
-        self.returncode = returncode
-        self.stderr = stderr
-
-
 def command_exists(binary: str) -> bool:
     return shutil.which(binary) is not None
 
@@ -48,7 +34,9 @@ def run_command(
     stderr = completed.stderr
 
     if check and completed.returncode != 0:
-        raise CommandError(args, completed.returncode, stderr)
+        raise subprocess.CalledProcessError(
+            completed.returncode, list(args), output=stdout, stderr=stderr
+        )
 
     return CommandResult(
         args=list(args),
