@@ -13,9 +13,10 @@ from .base import Backend
 class PodmanBackend(Backend):
     name = "podman"
 
-    _runtime_seen: bool | None = None
-    _host_identity: tuple[int, int, str] | None = None
-    _home_cache: dict[str, str] = {}
+    def __init__(self) -> None:
+        self._runtime_seen: bool | None = None
+        self._host_identity: tuple[int, int, str] | None = None
+        self._home_cache: dict[str, str] = {}
 
     def runtime_present(self) -> bool:
         if self._runtime_seen is None:
@@ -43,7 +44,7 @@ class PodmanBackend(Backend):
         return opts
 
     def _is_rootless(self) -> bool:
-        return os.getuid() != 0
+        return self._get_host_identity()[0] != 0
 
     def _container_home(self, name: str) -> str:
         if name not in self._home_cache:
@@ -71,6 +72,10 @@ class PodmanBackend(Backend):
             capture_output=True,
         )
 
+    def _user_exists(self, name: str, uid: int) -> bool:
+        result = self._exec_in_container(name, f"getent passwd {uid}")
+        return result.returncode == 0
+
     def _ensure_user(self, name: str, home_dir: str) -> None:
         host_uid, host_gid, host_user = self._get_host_identity()
         self._start_if_needed(name)
@@ -84,7 +89,7 @@ class PodmanBackend(Backend):
             adduser -H -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} -D {shlex.quote(host_user)}
 
         mkdir -p /etc/sudoers.d
-        echo "{shlex.quote(host_user)} ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-zaribox-user
+        printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' {shlex.quote(host_user)} > /etc/sudoers.d/90-zaribox-user
         chmod 0440 /etc/sudoers.d/90-zaribox-user
         """
         result = self._exec_in_container(name, script)
@@ -272,7 +277,8 @@ class PodmanBackend(Backend):
         home_dir = self._container_home(name) or os.environ.get("HOME", "/")
 
         self._start_if_needed(name)
-        self._ensure_user(name, home_dir)
+        if not self._user_exists(name, host_uid):
+            self._ensure_user(name, home_dir)
 
         shell_cmd = (
             f"if command -v {shlex.quote(preferred_shell)} >/dev/null 2>&1; then exec {shlex.quote(preferred_shell)} -l; "
