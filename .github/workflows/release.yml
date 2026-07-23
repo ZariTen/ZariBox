@@ -71,18 +71,45 @@ jobs:
           CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
 
           if [ -z "$PREV_TAG" ]; then
-            CHANGELOG=$(git log --oneline --pretty=format:"- %h: %s")
+            RANGE_ARGS=""
           else
-            CHANGELOG=$(git log "v${PREV_TAG}..HEAD" --oneline --pretty=format:"- %h: %s")
+            RANGE_ARGS="v${PREV_TAG}..HEAD"
           fi
 
-          # Fallback if changelog is empty (e.g. squash merge)
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="- Version bump to ${CURRENT_VERSION}"
+          # Returns commits matching a conventional commit prefix pattern
+          get_commits() {
+            local pattern="$1"
+            if [ -z "$RANGE_ARGS" ]; then
+              git log --pretty=format:"- %h: %s" -E --grep="$pattern" 2>/dev/null || true
+            else
+              git log "$RANGE_ARGS" --pretty=format:"- %h: %s" -E --grep="$pattern" 2>/dev/null || true
+            fi
+          }
+
+          # Append a grouped section to the changelog file
+          append_section() {
+            local title="$1"
+            local content="$2"
+            if [ -n "$content" ]; then
+              printf "### %s\n%s\n\n" "$title" "$content" >> /tmp/changelog.txt
+            fi
+          }
+
+          > /tmp/changelog.txt
+
+          append_section "Features"      "$(get_commits '^feat(\([^)]*\))?!?:')"
+          append_section "Bug Fixes"     "$(get_commits '^fix(\([^)]*\))?!?:')"
+          append_section "Refactoring"   "$(get_commits '^refactor(\([^)]*\))?!?:')"
+          append_section "Documentation" "$(get_commits '^docs(\([^)]*\))?!?:')"
+          append_section "Performance"   "$(get_commits '^perf(\([^)]*\))?!?:')"
+          append_section "Chores"        "$(get_commits '^chore(\([^)]*\))?!?:')"
+          append_section "Other"         "$(get_commits '^(style|test|ci|build|revert)(\([^)]*\))?!?:')"
+
+          # Fallback if no conventional commits were found
+          if [ ! -s /tmp/changelog.txt ]; then
+            echo "- Version bump to ${CURRENT_VERSION}" > /tmp/changelog.txt
           fi
 
-          # Use a file to safely pass multi-line content between steps
-          echo "$CHANGELOG" > /tmp/changelog.txt
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           cat /tmp/changelog.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -95,6 +122,7 @@ jobs:
           name: v${{ steps.current_version.outputs.version }}
           body: |
             ## Changes
+
             ${{ steps.release_notes.outputs.changelog }}
           draft: false
           prerelease: false
