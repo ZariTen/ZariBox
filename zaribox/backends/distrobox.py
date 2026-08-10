@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-from typing import Sequence
+from collections.abc import Sequence
 
 from ..shell import CommandResult, command_exists, run_command
 from .base import Backend
