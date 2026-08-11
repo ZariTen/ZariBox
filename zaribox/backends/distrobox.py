@@ -11,29 +11,43 @@ from .base import Backend
 class DistroboxBackend(Backend):
     name = "distrobox"
 
+    def __init__(self) -> None:
+        self._container_names: set[str] | None = None
+
     def runtime_present(self) -> bool:
         return command_exists("distrobox")
 
-    def _raise_on_failure(self, result: CommandResult) -> None:
+    def _raise_on_failure(self, result: CommandResult, context: str) -> None:
         if result.returncode != 0:
-            raise RuntimeError(
-                f"distrobox backend command failed\n{result.stderr.strip()}"
-                if result.stderr.strip()
-                else "distrobox backend command failed"
-            )
+            stderr_text = result.stderr.strip()
+            message = f"{context} failed"
+            if stderr_text:
+                message = f"{message}\n{stderr_text}"
+            raise RuntimeError(message)
+
+    def _list_names(self) -> set[str]:
+        """Return the names of all existing containers, fetched once per instance."""
+        if self._container_names is None:
+            names: set[str] = set()
+            if self.runtime_present():
+                result = run_command(["distrobox", "list"], capture_output=True)
+                if result.returncode == 0:
+                    for line in result.stdout.splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if "|" in line:
+                            cells = [cell.strip() for cell in line.split("|")]
+                            name = cells[1] if len(cells) > 1 else ""
+                            if name and name != "NAME":  # skip table header
+                                names.add(name)
+                        else:
+                            names.add(line.split()[0])
+            self._container_names = names
+        return self._container_names
 
     def container_exists(self, name: str) -> bool:
-        if not self.runtime_present():
-            return False
-
-        result = run_command(["distrobox", "list"], capture_output=True)
-        if result.returncode != 0:
-            return False
-
-        output = result.stdout
-        return f"| {name} " in output or any(
-            line.split() and name == line.split()[0] for line in output.splitlines()
-        )
+        return name in self._list_names()
 
     def create(
         self,
@@ -56,11 +70,8 @@ class DistroboxBackend(Backend):
         if extra_flags.strip():
             args.extend(shlex.split(extra_flags))
 
-        try:
-            result = run_command(args, capture_output=False)
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(str(exc)) from exc
-        self._raise_on_failure(result)
+        result = run_command(args, capture_output=False)
+        self._raise_on_failure(result, "distrobox create")
 
     def exec(
         self,
@@ -71,20 +82,13 @@ class DistroboxBackend(Backend):
         check: bool = True,
         capture_output: bool = True,
     ) -> CommandResult:
-        if as_user:
-            cmd = list(command)
-        else:
-            cmd = ["sudo", *command]
-
-        args = ["distrobox", "enter", name, "--", *cmd]
+        args = ["distrobox", "enter", name, "--", *command]
+        if not as_user:
+            args.insert(2, "--root")
 
         result = run_command(args, capture_output=capture_output)
-        if check and result.returncode != 0:
-            raise RuntimeError(
-                f"distrobox exec failed\n{result.stderr.strip()}"
-                if result.stderr.strip()
-                else "distrobox exec failed"
-            )
+        if check:
+            self._raise_on_failure(result, "distrobox exec")
         return result
 
     def post_install(self, name: str, home_dir: str) -> None:
@@ -96,13 +100,13 @@ class DistroboxBackend(Backend):
 
     def stop(self, name: str) -> None:
         result = run_command(["distrobox", "stop", name, "--yes"], capture_output=True)
-        self._raise_on_failure(result)
+        self._raise_on_failure(result, "distrobox stop")
 
     def rm(self, name: str) -> None:
         result = run_command(["distrobox", "rm", name, "--force"], capture_output=True)
-        self._raise_on_failure(result)
+        self._raise_on_failure(result, "distrobox rm")
 
     def ps(self) -> str:
         result = run_command(["distrobox", "list"], capture_output=True)
-        self._raise_on_failure(result)
+        self._raise_on_failure(result, "distrobox list")
         return result.stdout
