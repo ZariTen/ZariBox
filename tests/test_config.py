@@ -52,7 +52,14 @@ def test_load_config_basic(tmp_path: Path) -> None:
     assert config.name == "devbox"
     assert config.image == "docker.io/library/archlinux:latest"
     assert config.packages == ["git", "neovim"]
+    assert config.home_mount is False
     assert config.file_path == p
+
+
+def test_load_config_home_mount(tmp_path: Path) -> None:
+    p = tmp_path / "devbox.yaml"
+    p.write_text("Image: archlinux\nHomeMount: true\n")
+    assert load_config(p).home_mount is True
 
 
 def test_load_config_name_defaults_to_stem(tmp_path: Path) -> None:
@@ -109,6 +116,17 @@ def test_container_identity_hash_normalizes_image() -> None:
     c1 = ZariConfig(file_path=Path("x.yaml"), name="box", image="archlinux:latest")
     c2 = ZariConfig(file_path=Path("x.yaml"), name="box", image="docker.io/library/archlinux:latest")
     assert container_identity_hash(c1) == container_identity_hash(c2)
+
+
+def test_container_identity_hash_differs_on_home_mount() -> None:
+    c1 = _dummy_config()
+    c2 = ZariConfig(
+        file_path=Path("x.yaml"),
+        name="box",
+        image="archlinux:latest",
+        home_mount=True,
+    )
+    assert container_identity_hash(c1) != container_identity_hash(c2)
 
 
 # state.package_drift

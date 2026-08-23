@@ -50,7 +50,13 @@ def run_create(yaml_arg: str | None) -> int:
 
     step(f"Pulling image and creating container '{name}'...")
     try:
-        backend.create(name, config.image, home_dir, config.extra_flags)
+        backend.create(
+            name,
+            config.image,
+            home_dir,
+            config.extra_flags,
+            config.home_mount,
+        )
     except RuntimeError as exc:
         err(str(exc))
         return 1

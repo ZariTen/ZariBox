@@ -60,6 +60,7 @@ Name: devbox          # optional, defaults to the file name
 Image: archlinux      # required
 Backend: podman       # optional, see "Backend selection"
 HomeDir: /home/$USER/Documents/devbox   # optional
+HomeMount: true                         # optional, mount /home/$USER at /run/host/home/$USER
 ExtraFlags: --device nvidia.com/gpu=all # optional, extra flags for container creation
 Packages:             # optional
   - git
@@ -74,6 +75,7 @@ Run:                  # optional, run as your user after install
 | `Image` | Base image. Short names are expanded to their full `docker.io` reference with a `:latest` tag. |
 | `Backend` | `podman`. |
 | `HomeDir` | Home directory for the container; environment variables like `$USER` are expanded. Defaults to `$XDG_DATA_HOME/zaribox/home/<name>` (usually `~/.local/share/zaribox/home/<name>`). Persists across recreations. |
+| `HomeMount` | When `true`, mounts the host home directory `/home/$USER` read-write at `/run/host/home/$USER` inside the container. |
 | `ExtraFlags` | Extra flags passed through to `podman create`. |
 | `Packages` | Packages to install when the container is created or synced. |
 | `Run` | Shell commands executed as your user inside the container after package install. |

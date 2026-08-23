@@ -107,7 +107,12 @@ class PodmanBackend:
         )
 
     def create(
-        self, name: str, image: str, home_dir: str, extra_flags: str = ""
+        self,
+        name: str,
+        image: str,
+        home_dir: str,
+        extra_flags: str = "",
+        home_mount: bool = False,
     ) -> None:
         os.makedirs(home_dir, exist_ok=True)
         home_dir = home_dir.rstrip("/")
@@ -146,6 +151,13 @@ class PodmanBackend:
             "--volume",
             f"{home_dir}:{home_dir}:{mnt_home}",
         ]
+
+        if home_mount:
+            host_home = f"/home/{host_user}"
+            container_home = f"/run/host/home/{host_user}"
+            args.extend(
+                ["--volume", f"{host_home}:{container_home}:{self._mount_opts('rw')}"]
+            )
 
         if (
             host_actual_home

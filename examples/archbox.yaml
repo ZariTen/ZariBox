@@ -1,4 +1,4 @@
-# archbox.yaml — ZariBox config for an Arch Linux dev container
+# archbox.yaml - ZariBox config for an Arch Linux dev container
 # Run: zaribox apply archbox.yaml
 
 Name: archbox
@@ -7,6 +7,9 @@ Image: archlinux
 
 # Optional: custom home directory (persists across recreations)
 HomeDir: /home/$USER/Documents/Archbox/
+
+# Optional: mount host home directory
+HomeMount: true
 
 Packages:
   - base-devel
@@ -19,7 +22,6 @@ Packages:
 
 # Optional: commands to run after package install
 Run:
-  - rm -rf ~/yay && git clone https://aur.archlinux.org/yay-bin.git ~/yay && cd ~/yay && makepkg -si --noconfirm
   - echo 'exec fish' >> ~/.bashrc
   - mkdir -p ~/.config/fish && echo 'eval "$(starship init fish)"' >> ~/.config/fish/config.fish
 

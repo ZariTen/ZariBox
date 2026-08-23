@@ -103,6 +103,8 @@ def _normalize_image(image: str) -> str:
 
 def container_identity_hash(config: ZariConfig) -> str:
     payload = f"{_normalize_image(config.image)}\n{config.home_dir or ''}\n{config.extra_flags}\n"
+    if config.home_mount:
+        payload += "HomeMount=true\n"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 

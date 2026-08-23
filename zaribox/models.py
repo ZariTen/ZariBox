@@ -14,3 +14,4 @@ class ZariConfig:
     extra_flags: str = ""
     packages: list[str] = field(default_factory=list[str])
     run: list[str] = field(default_factory=list[str])
+    home_mount: bool = False

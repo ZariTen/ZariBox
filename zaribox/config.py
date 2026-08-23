@@ -101,6 +101,13 @@ def load_config(path: Path) -> ZariConfig:
         else None
     )
 
+    home_mount_value = raw.get("HomeMount", False)
+    home_mount = (
+        home_mount_value.strip().lower() == "true"
+        if isinstance(home_mount_value, str)
+        else home_mount_value is True
+    )
+
     extra_flags_value = raw.get("ExtraFlags")
     extra_flags = (
         str(extra_flags_value).strip() if extra_flags_value is not None else ""
@@ -112,6 +119,7 @@ def load_config(path: Path) -> ZariConfig:
         image=image,
         backend=backend_name or None,
         home_dir=home_dir or None,
+        home_mount=home_mount,
         extra_flags=extra_flags,
         packages=_normalize_list(raw.get("Packages")),
         run=_normalize_list(raw.get("Run")),
