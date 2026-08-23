@@ -4,7 +4,7 @@
 
 ZariBox is a declarative container manager for reproducible dev boxes. You describe a container in a YAML file (base image, packages, post-install setup), and ZariBox creates it and keeps it in sync with that description.
 
-It works with both [distrobox](https://github.com/89luca89/distrobox) and [podman](https://podman.io/) as backends.
+It uses [Podman](https://podman.io/) to run and manage containers.
 
 ## Quick start
 
@@ -35,9 +35,9 @@ The backend is resolved in this order:
 
 1. `ZARIBOX_BACKEND` environment variable
 2. `Backend:` field in the YAML file
-3. default: `distrobox`
+3. default: `podman`
 
-Supported backends: `distrobox` and `podman`. The chosen backend must be installed and in `PATH`.
+The only supported backend is `podman`, which must be installed and in `PATH`.
 
 ## Commands
 
@@ -72,9 +72,9 @@ Run:                  # optional, run as your user after install
 | --- | --- |
 | `Name` | Container name. Defaults to the YAML file name without extension. |
 | `Image` | Base image. Short names are expanded to their full `docker.io` reference with a `:latest` tag. |
-| `Backend` | `distrobox` or `podman`. |
+| `Backend` | `podman`. |
 | `HomeDir` | Home directory for the container; environment variables like `$USER` are expanded. Defaults to `$XDG_DATA_HOME/zaribox/home/<name>` (usually `~/.local/share/zaribox/home/<name>`). Persists across recreations. |
-| `ExtraFlags` | Extra flags passed through to `distrobox create` / `podman create`. |
+| `ExtraFlags` | Extra flags passed through to `podman create`. |
 | `Packages` | Packages to install when the container is created or synced. |
 | `Run` | Shell commands executed as your user inside the container after package install. |
 
@@ -82,7 +82,7 @@ The package manager is auto-detected from the image name: `arch`/`manjaro`/`ende
 
 ## Install
 
-**Requirements:** Python 3.10+, PyYAML, and `distrobox` or `podman` in your `PATH`.
+**Requirements:** Python 3.10+, PyYAML, and `podman` in your `PATH`.
 
 ```bash
 # Nix

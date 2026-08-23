@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "zaribox"
 dynamic = ["version"]
-description = "Declarative Distrobox manager"
+description = "Declarative Podman manager"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "GPL-3.0"}

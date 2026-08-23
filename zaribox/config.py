@@ -121,10 +121,8 @@ def resolve_backend(config: ZariConfig | None) -> str:
     if not selected and config is not None and config.backend:
         selected = config.backend.strip()
     if not selected:
-        selected = "distrobox"
+        selected = "podman"
 
-    if selected not in {"distrobox", "podman"}:
-        raise ValueError(
-            f"Unsupported backend: '{selected}'. Supported: distrobox, podman"
-        )
+    if selected not in {"podman"}:
+        raise ValueError(f"Unsupported backend: '{selected}'. Supported: podman")
     return selected

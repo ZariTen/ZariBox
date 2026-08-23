@@ -75,14 +75,14 @@ def _dummy_config(backend=None) -> ZariConfig:
     return ZariConfig(file_path=Path("x.yaml"), name="box", image="archlinux:latest", backend=backend)
 
 
-def test_resolve_backend_defaults_to_distrobox(monkeypatch) -> None:
+def test_resolve_backend_defaults_to_podman(monkeypatch) -> None:
     monkeypatch.delenv("ZARIBOX_BACKEND", raising=False)
-    assert resolve_backend(None) == "distrobox"
+    assert resolve_backend(None) == "podman"
 
 
-def test_resolve_backend_env_overrides_config(monkeypatch) -> None:
-    monkeypatch.setenv("ZARIBOX_BACKEND", "podman")
-    assert resolve_backend(_dummy_config("distrobox")) == "podman"
+def test_resolve_backend_uses_configured_podman(monkeypatch) -> None:
+    monkeypatch.delenv("ZARIBOX_BACKEND", raising=False)
+    assert resolve_backend(_dummy_config("podman")) == "podman"
 
 
 def test_resolve_backend_invalid_raises(monkeypatch) -> None:

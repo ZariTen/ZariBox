@@ -2,7 +2,7 @@
 # Run: zaribox apply archbox.yaml
 
 Name: archbox
-Backend: distrobox
+Backend: podman
 Image: archlinux
 
 # Optional: custom home directory (persists across recreations)
@@ -23,5 +23,5 @@ Run:
   - echo 'exec fish' >> ~/.bashrc
   - mkdir -p ~/.config/fish && echo 'eval "$(starship init fish)"' >> ~/.config/fish/config.fish
 
-# Optional: extra flags passed to `distrobox create`
+# Optional: extra flags passed to `podman create`
 ExtraFlags: --nvidia
