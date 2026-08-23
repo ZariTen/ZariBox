@@ -9,7 +9,7 @@ def run_enter(container_name: str) -> int:
     try:
         state = StateStore(container_name)
         resolved = state.yaml_path_for(container_name)
-        yaml_path, config, backend_name, backend = load_context(resolved)
+        _, config, backend_name, backend = load_context(resolved)
     except (ValueError, RuntimeError) as exc:
         err(str(exc))
         return 1

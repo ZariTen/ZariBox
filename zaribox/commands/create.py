@@ -69,7 +69,7 @@ def run_create(yaml_arg: str | None) -> int:
         try:
             for command_line in config.run:
                 step(f"  $ {command_line}")
-                backend.exec(
+                _ = backend.exec(
                     name,
                     ["bash", "-c", command_line],
                     as_user=True,

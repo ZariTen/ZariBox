@@ -13,7 +13,7 @@ def _config_dir() -> Path:
 
 class StateStore:
     def __init__(self, container_name: str = "") -> None:
-        self.cache_dir = (
+        self.cache_dir: Path = (
             _config_dir() / "zaribox" / container_name
             if container_name != ""
             else _config_dir() / "zaribox"
@@ -36,7 +36,9 @@ class StateStore:
         return path.read_text(encoding="utf-8").strip()
 
     def save_container_hash(self, container_name: str, value: str) -> None:
-        self.container_hash_path(container_name).write_text(value, encoding="utf-8")
+        _ = self.container_hash_path(container_name).write_text(
+            value, encoding="utf-8"
+        )
 
     def saved_packages(self, container_name: str) -> list[str]:
         path = self.packages_path(container_name)
@@ -48,13 +50,13 @@ class StateStore:
     def save_packages(self, container_name: str, packages: list[str]) -> None:
         path = self.packages_path(container_name)
         if not packages:
-            path.write_text("", encoding="utf-8")
+            _ = path.write_text("", encoding="utf-8")
             return
 
         package_lines = sorted(
             {package.strip() for package in packages if package.strip()}
         )
-        path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
+        _ = path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
 
     def clear_cache(self, container_name: str) -> None:
         for path in (
@@ -85,14 +87,15 @@ class StateStore:
             stored = f"~/{relative}"
         except ValueError:
             stored = str(yaml_path)
-        self.yaml_path_cache_path(container_name).write_text(stored, encoding="utf-8")
+        _ = self.yaml_path_cache_path(container_name).write_text(
+            stored, encoding="utf-8"
+        )
 
 
 def _normalize_image(image: str) -> str:
     image = image.strip()
     for prefix in ("docker.io/library/", "docker.io/"):
-        if image.startswith(prefix):
-            image = image[len(prefix) :]
+        image = image.removeprefix(prefix)
     if ":" not in image:
         image += ":latest"
     return image

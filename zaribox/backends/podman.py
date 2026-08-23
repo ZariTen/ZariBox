@@ -7,11 +7,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ..shell import CommandResult, command_exists, run_command
-from .base import Backend
 
 
-class PodmanBackend(Backend):
-    name = "podman"
+class PodmanBackend:
+    name: str = "podman"
 
     def __init__(self) -> None:
         self._runtime_seen: bool | None = None
@@ -64,7 +63,7 @@ class PodmanBackend(Backend):
         return self._home_cache[name]
 
     def _start_if_needed(self, name: str) -> None:
-        run_command(["podman", "start", name], capture_output=True)
+        _ = run_command(["podman", "start", name], capture_output=True)
 
     def _exec_in_container(self, name: str, cmd: str) -> CommandResult:
         return run_command(
@@ -314,7 +313,7 @@ class PodmanBackend(Backend):
         if target_home == host_actual_home or target_home == "" or self._is_rootless():
             return
 
-        self._exec_in_container(
+        _ = self._exec_in_container(
             name, f"chown {host_uid}:{host_gid} {shlex.quote(target_home)}"
         )
 

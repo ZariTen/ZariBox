@@ -6,11 +6,13 @@ from typing import cast
 
 import yaml
 
-from .backends import make_backend
+from .backends import PodmanBackend, make_backend
 from .models import ZariConfig
 
 
-def load_context(yaml_arg):
+def load_context(
+    yaml_arg: str | Path | None,
+) -> tuple[Path, ZariConfig, str, PodmanBackend]:
     yaml_path = resolve_yaml(yaml_arg)
     config = load_config(yaml_path)
     backend_name = resolve_backend(config)
@@ -29,7 +31,7 @@ def _resolve_image(image: str) -> str:
     return image
 
 
-def resolve_yaml(arg: str | None) -> Path:
+def resolve_yaml(arg: str | Path | None) -> Path:
     if arg:
         direct = Path(arg)
         if direct.is_file():
@@ -52,14 +54,14 @@ def resolve_yaml(arg: str | None) -> Path:
         choices = ", ".join(path.name for path in candidates)
         raise ValueError(
             "Multiple YAML files found. Pass one explicitly (for example: "
-            f"'zaribox status {candidates[0].name}'). Found: {choices}"
+            + f"'zaribox status {candidates[0].name}'). Found: {choices}"
         )
     return candidates[0]
 
 
 def _load_yaml(path: Path) -> dict[str, object]:
     with path.open("r", encoding="utf-8") as stream:
-        loaded_obj: object = yaml.safe_load(stream)
+        loaded_obj = cast(object, yaml.safe_load(stream))
 
     if loaded_obj is None:
         loaded: dict[object, object] = {}

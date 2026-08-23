@@ -1,20 +1,26 @@
 import re
+from pathlib import Path
 
-from ..backends import Backend
+from ..backends import PodmanBackend
 from ..config import load_context
 from ..logging import err, ok, step
+from ..models import ZariConfig
 from ..pkgmgr import detect_pkgmgr, list_cmd
 from ..state import StateStore
 
 
-def _fetch_installed_packages(backend: Backend, name: str, image: str) -> list[str]:
+def _fetch_installed_packages(
+    backend: PodmanBackend, name: str, image: str
+) -> list[str]:
     mgr = detect_pkgmgr(image)
     cmd = list_cmd(mgr)
     result = backend.exec(name, cmd, as_user=False, capture_output=True)
     return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
 
 
-def _merge_into_config(yaml_path, config, packages: list[str]) -> list[str]:
+def _merge_into_config(
+    yaml_path: Path, config: ZariConfig, packages: list[str]
+) -> list[str]:
     existing = set(config.packages)
     incoming = set(packages)
     added = sorted(incoming - existing)
@@ -30,7 +36,7 @@ def _merge_into_config(yaml_path, config, packages: list[str]) -> list[str]:
         )
     else:
         text = text.rstrip("\n") + "\n" + block
-    yaml_path.write_text(text)
+    _ = yaml_path.write_text(text)
     return added
 
 

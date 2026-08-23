@@ -1,31 +1,34 @@
-from ..backends import Backend
+from ..backends import PodmanBackend
 from ..config import load_context
 from ..logging import err, ok, step
+from ..models import ZariConfig
 from ..pkgmgr import detect_pkgmgr, install_cmd, remove_cmd
 from ..state import StateStore, package_drift
 
 
 def _run_package_install(
-    backend: Backend, name: str, packages: list[str], image: str
+    backend: PodmanBackend, name: str, packages: list[str], image: str
 ) -> None:
     mgr = detect_pkgmgr(image)
     cmd = install_cmd(mgr)
     step(f"Installing {len(packages)} package(s) via {mgr}...")
-    backend.exec(name, ["bash", "-c", cmd, "_", *packages], as_user=False)
+    _ = backend.exec(name, ["bash", "-c", cmd, "_", *packages], as_user=False)
     ok(f"Packages installed: {' '.join(packages)}")
 
 
 def _run_package_remove(
-    backend: Backend, name: str, packages: list[str], image: str
+    backend: PodmanBackend, name: str, packages: list[str], image: str
 ) -> None:
     mgr = detect_pkgmgr(image)
     cmd = remove_cmd(mgr)
     step(f"Removing {len(packages)} package(s): {' '.join(packages)}")
-    backend.exec(name, ["bash", "-c", cmd, "_", *packages], as_user=False)
+    _ = backend.exec(name, ["bash", "-c", cmd, "_", *packages], as_user=False)
     ok(f"Removed: {' '.join(packages)}")
 
 
-def _sync_from_config(config, backend, backend_name: str) -> int:
+def _sync_from_config(
+    config: ZariConfig, backend: PodmanBackend, backend_name: str
+) -> int:
     if not backend.runtime_present():
         err(f"{backend_name} is not installed or not in PATH.")
         return 1
@@ -63,7 +66,7 @@ def run_sync(container_name: str) -> int:
     try:
         state = StateStore(container_name)
         resolved = state.yaml_path_for(container_name)
-        yaml_path, config, backend_name, backend = load_context(resolved)
+        _yaml_path, config, backend_name, backend = load_context(resolved)
     except (ValueError, RuntimeError) as exc:
         err(str(exc))
         return 1
