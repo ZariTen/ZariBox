@@ -14,7 +14,7 @@
       forAllSystems =
         f: nixpkgs.lib.genAttrs supportedSystems (system: f nixpkgs.legacyPackages.${system});
 
-      version = "0.2.7";
+      version = "0.2.7.1";
     in
     {
       formatter = forAllSystems (pkgs: pkgs.nixfmt);
@@ -28,7 +28,7 @@
             owner = "ZariTen";
             repo = "zaribox";
             rev = "v${version}";
-            hash = "sha256-7glE+Hj1/inYD49i79RdsvAl7WitDl0m76UGfiNEFzU=";
+            hash = "sha256-qHMDuGlRYcrQrRfZPsZSdA6ij8d3bVFSqqSqtrb13cY=";
           };
 
           format = "pyproject";
