@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 import shlex
-import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
 from ..shell import CommandResult, command_exists, run_command
-from ..state import StateStore
+from .podman_graphics import add_create_args, current_graphics_env, refresh_xauthority
+from .podman_mounts import mount_options
 
 
 class PodmanBackend:
@@ -40,9 +40,7 @@ class PodmanBackend:
             raise RuntimeError(message)
 
     def _mount_opts(self, opts: str) -> str:
-        if os.environ.get("ZARIBOX_PODMAN_RELABEL") == "1":
-            return f"{opts},z"
-        return opts
+        return mount_options(opts)
 
     def _is_rootless(self) -> bool:
         return self._get_host_identity()[0] != 0
@@ -64,71 +62,11 @@ class PodmanBackend:
             )
         return self._home_cache[name]
 
-    def _host_xauthority(self) -> Path | None:
-        xauthority = os.environ.get("XAUTHORITY")
-        if not xauthority:
-            home = os.environ.get("HOME")
-            if not home:
-                return None
-            xauthority = str(Path(home) / ".Xauthority")
-
-        path = Path(xauthority).expanduser()
-        return path if path.is_file() else None
-
-    def _xauthority_path(self, name: str) -> Path:
-        return StateStore(name).cache_dir / "xauth"
-
-    def _persist_xauthority(self, name: str) -> Path | None:
-        source = self._host_xauthority()
-        if source is None:
-            return None
-
-        target = self._xauthority_path(name)
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
-            target.chmod(0o600)
-        except OSError as exc:
-            raise RuntimeError(
-                f"Failed to persist Xauthority file from '{source}'"
-            ) from exc
-        return target
-
-    def _refresh_xauthority(self, name: str) -> None:
-        target = self._xauthority_path(name)
-        if not target.is_file():
-            return
-
-        source = self._host_xauthority()
-        if source is None or source.resolve() == target.resolve():
-            return
-
-        try:
-            shutil.copyfile(source, target)
-            target.chmod(0o600)
-        except OSError as exc:
-            raise RuntimeError(
-                f"Failed to refresh Xauthority file from '{source}'"
-            ) from exc
-
     def _current_graphics_env(self) -> list[str]:
-        display = os.environ.get("DISPLAY", "")
-        args = ["--env", f"DISPLAY={display}"]
-
-        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-        wayland_display = os.environ.get("WAYLAND_DISPLAY")
-        if (
-            runtime_dir
-            and wayland_display
-            and Path(runtime_dir, wayland_display).is_socket()
-        ):
-            args.extend(["--env", f"WAYLAND_DISPLAY={wayland_display}"])
-        else:
-            args.extend(["--env", "WAYLAND_DISPLAY="])
-        return args
+        return current_graphics_env()
 
     def _start_if_needed(self, name: str) -> None:
-        self._refresh_xauthority(name)
+        refresh_xauthority(name)
         result = run_command(["podman", "start", name], capture_output=True)
         self._raise_on_failure(result, "podman start")
 
@@ -185,8 +123,6 @@ class PodmanBackend:
         home_dir = home_dir.rstrip("/")
         _, _, host_user = self._get_host_identity()
 
-        mnt_rw_rslave = self._mount_opts("rw,rslave")
-        mnt_ro = self._mount_opts("ro")
         mnt_home = self._mount_opts("rslave")
         host_actual_home = os.environ.get("HOME", "").rstrip("/")
 
@@ -242,58 +178,7 @@ class PodmanBackend:
         if term:
             args.extend(["--env", f"TERM={term}"])
 
-        display = os.environ.get("DISPLAY")
-        if display:
-            if Path("/tmp/.X11-unix").is_dir():
-                args.extend(
-                    ["--volume", f"/tmp/.X11-unix:/tmp/.X11-unix:{mnt_rw_rslave}"]
-                )
-            xauth = self._persist_xauthority(name)
-            if xauth is not None:
-                args.extend(
-                    [
-                        "--env",
-                        "XAUTHORITY=/tmp/.container_xauth",
-                        "--volume",
-                        f"{xauth}:/tmp/.container_xauth:{mnt_ro}",
-                    ]
-                )
-
-        xdg_runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-        if xdg_runtime_dir and Path(xdg_runtime_dir).is_dir():
-            args.extend(
-                [
-                    "--env",
-                    f"XDG_RUNTIME_DIR={xdg_runtime_dir}",
-                    "--volume",
-                    f"{xdg_runtime_dir}:{xdg_runtime_dir}:{mnt_rw_rslave}",
-                ]
-            )
-            bus_path = Path(xdg_runtime_dir, "bus")
-            if bus_path.is_socket():
-                args.extend(["--env", f"DBUS_SESSION_BUS_ADDRESS=unix:path={bus_path}"])
-            elif os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
-                args.extend(
-                    [
-                        "--env",
-                        f"DBUS_SESSION_BUS_ADDRESS={os.environ['DBUS_SESSION_BUS_ADDRESS']}",
-                    ]
-                )
-
-            pulse_dir = Path(xdg_runtime_dir, "pulse")
-            if pulse_dir.is_dir():
-                args.extend(["--volume", f"{pulse_dir}:{pulse_dir}:{mnt_rw_rslave}"])
-                if os.environ.get("PULSE_SERVER"):
-                    args.extend(["--env", f"PULSE_SERVER={os.environ['PULSE_SERVER']}"])
-                elif Path(pulse_dir, "native").is_socket():
-                    args.extend(["--env", f"PULSE_SERVER=unix:{pulse_dir}/native"])
-
-        if Path("/dev/dri").exists():
-            args.extend(["--device", "/dev/dri"])
-        if Path("/dev/kfd").exists():
-            args.extend(["--device", "/dev/kfd"])
-        if Path("/etc/localtime").exists():
-            args.extend(["--volume", "/etc/localtime:/etc/localtime:ro"])
+        add_create_args(args, name)
 
         if extra_flags.strip():
             args.extend(shlex.split(extra_flags))
