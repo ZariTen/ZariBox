@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
 from ..shell import CommandResult, command_exists, run_command
+from ..state import StateStore
 
 
 class PodmanBackend:
@@ -62,8 +64,73 @@ class PodmanBackend:
             )
         return self._home_cache[name]
 
+    def _host_xauthority(self) -> Path | None:
+        xauthority = os.environ.get("XAUTHORITY")
+        if not xauthority:
+            home = os.environ.get("HOME")
+            if not home:
+                return None
+            xauthority = str(Path(home) / ".Xauthority")
+
+        path = Path(xauthority).expanduser()
+        return path if path.is_file() else None
+
+    def _xauthority_path(self, name: str) -> Path:
+        return StateStore(name).cache_dir / "xauth"
+
+    def _persist_xauthority(self, name: str) -> Path | None:
+        source = self._host_xauthority()
+        if source is None:
+            return None
+
+        target = self._xauthority_path(name)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            target.chmod(0o600)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to persist Xauthority file from '{source}'"
+            ) from exc
+        return target
+
+    def _refresh_xauthority(self, name: str) -> None:
+        target = self._xauthority_path(name)
+        if not target.is_file():
+            return
+
+        source = self._host_xauthority()
+        if source is None or source.resolve() == target.resolve():
+            return
+
+        try:
+            shutil.copyfile(source, target)
+            target.chmod(0o600)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to refresh Xauthority file from '{source}'"
+            ) from exc
+
+    def _current_graphics_env(self) -> list[str]:
+        display = os.environ.get("DISPLAY", "")
+        args = ["--env", f"DISPLAY={display}"]
+
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+        wayland_display = os.environ.get("WAYLAND_DISPLAY")
+        if (
+            runtime_dir
+            and wayland_display
+            and Path(runtime_dir, wayland_display).is_socket()
+        ):
+            args.extend(["--env", f"WAYLAND_DISPLAY={wayland_display}"])
+        else:
+            args.extend(["--env", "WAYLAND_DISPLAY="])
+        return args
+
     def _start_if_needed(self, name: str) -> None:
-        _ = run_command(["podman", "start", name], capture_output=True)
+        self._refresh_xauthority(name)
+        result = run_command(["podman", "start", name], capture_output=True)
+        self._raise_on_failure(result, "podman start")
 
     def _exec_in_container(self, name: str, cmd: str) -> CommandResult:
         return run_command(
@@ -177,15 +244,12 @@ class PodmanBackend:
 
         display = os.environ.get("DISPLAY")
         if display:
-            args.extend(["--env", f"DISPLAY={display}"])
             if Path("/tmp/.X11-unix").is_dir():
                 args.extend(
                     ["--volume", f"/tmp/.X11-unix:/tmp/.X11-unix:{mnt_rw_rslave}"]
                 )
-            xauth = os.environ.get("XAUTHORITY") or str(
-                Path(os.environ.get("HOME", ""), ".Xauthority")
-            )
-            if Path(xauth).is_file():
+            xauth = self._persist_xauthority(name)
+            if xauth is not None:
                 args.extend(
                     [
                         "--env",
@@ -205,10 +269,6 @@ class PodmanBackend:
                     f"{xdg_runtime_dir}:{xdg_runtime_dir}:{mnt_rw_rslave}",
                 ]
             )
-            wayland_display = os.environ.get("WAYLAND_DISPLAY")
-            if wayland_display and Path(xdg_runtime_dir, wayland_display).is_socket():
-                args.extend(["--env", f"WAYLAND_DISPLAY={wayland_display}"])
-
             bus_path = Path(xdg_runtime_dir, "bus")
             if bus_path.is_socket():
                 args.extend(["--env", f"DBUS_SESSION_BUS_ADDRESS=unix:path={bus_path}"])
@@ -276,7 +336,7 @@ class PodmanBackend:
         else:
             args.extend(["--user", "0"])
 
-        args.extend([name, *command])
+        args.extend([*self._current_graphics_env(), name, *command])
         result = run_command(args, capture_output=capture_output)
         if check and result.returncode != 0:
             self._raise_on_failure(result, "podman exec")
@@ -308,6 +368,7 @@ class PodmanBackend:
                 f"LOGNAME={host_user}",
                 "--env",
                 f"HOME={home_dir}",
+                *self._current_graphics_env(),
                 name,
                 "sh",
                 "-lc",
