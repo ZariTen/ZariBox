@@ -82,6 +82,10 @@ Run:                  # optional, run as your user after install
 
 The package manager is auto-detected from the image name: `arch`/`manjaro`/`endeavour` → pacman, `ubuntu`/`debian`/`pop`/`mint` → apt, `fedora`/`centos`/`rhel` → dnf, `opensuse`/`suse` → zypper, `alpine` → apk, `void` → xbps. Unknown images fall back to apt. `export` reads the distro's list of *explicitly installed* packages, so packages pulled in as dependencies are not added to your config.
 
+### GUI applications
+
+On Linux, ZariBox mounts the host's X11/Wayland runtime sockets when the container is created and forwards the current `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_SESSION_TYPE`, and `XDG_RUNTIME_DIR` values whenever it enters or executes a command. If those variables are not exported by the host shell, an unambiguous active socket is detected automatically. Containers created before the graphical runtime mount was available must be recreated for GUI applications to work.
+
 ## Install
 
 **Requirements:** Python 3.10+, PyYAML, and `podman` in your `PATH`.

@@ -7,6 +7,59 @@ from pathlib import Path
 from ..state import StateStore
 from .podman_mounts import mount_options
 
+X11_SOCKET_DIR = Path("/tmp/.X11-unix")
+RUNTIME_DIR_ROOT = Path("/run/user")
+
+
+def _runtime_directory() -> Path | None:
+    configured = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if configured:
+        path = Path(configured).expanduser()
+        return path if path.is_dir() else None
+
+    fallback = RUNTIME_DIR_ROOT / str(os.getuid())
+    return fallback if fallback.is_dir() else None
+
+
+def _resolve_display() -> str:
+    display = os.environ.get("DISPLAY", "").strip()
+    if display:
+        return display
+
+    if not X11_SOCKET_DIR.is_dir():
+        return ""
+
+    candidates = [
+        socket_path
+        for socket_path in X11_SOCKET_DIR.glob("X*")
+        if socket_path.name.removeprefix("X").isdigit() and socket_path.is_socket()
+    ]
+    if len(candidates) == 1:
+        display_number = candidates[0].name.removeprefix("X")
+        return f":{display_number}"
+    return ""
+
+
+def _resolve_wayland_display(runtime_dir: Path | None) -> str:
+    configured = os.environ.get("WAYLAND_DISPLAY", "").strip()
+    if configured:
+        socket_path = Path(configured).expanduser()
+        if not socket_path.is_absolute():
+            if runtime_dir is None:
+                return ""
+            socket_path = runtime_dir / socket_path
+        return configured if socket_path.is_socket() else ""
+
+    if runtime_dir is None:
+        return ""
+
+    candidates = [
+        socket_path
+        for socket_path in runtime_dir.glob("wayland-*")
+        if socket_path.is_socket()
+    ]
+    return candidates[0].name if len(candidates) == 1 else ""
+
 
 def host_xauthority() -> Path | None:
     xauthority = os.environ.get("XAUTHORITY")
@@ -60,19 +113,27 @@ def refresh_xauthority(name: str) -> None:
 
 
 def current_graphics_env() -> list[str]:
-    display = os.environ.get("DISPLAY", "")
-    args = ["--env", f"DISPLAY={display}"]
+    runtime_dir = _runtime_directory()
+    display = _resolve_display()
+    wayland_display = _resolve_wayland_display(runtime_dir)
+    session_type = os.environ.get("XDG_SESSION_TYPE", "").strip()
 
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-    wayland_display = os.environ.get("WAYLAND_DISPLAY")
-    if (
-        runtime_dir
-        and wayland_display
-        and Path(runtime_dir, wayland_display).is_socket()
-    ):
-        args.extend(["--env", f"WAYLAND_DISPLAY={wayland_display}"])
-    else:
-        args.extend(["--env", "WAYLAND_DISPLAY="])
+    if not session_type:
+        if wayland_display:
+            session_type = "wayland"
+        elif display:
+            session_type = "x11"
+
+    args = [
+        "--env",
+        f"DISPLAY={display}",
+        "--env",
+        f"WAYLAND_DISPLAY={wayland_display}",
+        "--env",
+        f"XDG_SESSION_TYPE={session_type}",
+    ]
+    if runtime_dir is not None:
+        args.extend(["--env", f"XDG_RUNTIME_DIR={runtime_dir}"])
     return args
 
 
@@ -80,12 +141,16 @@ def add_create_args(args: list[str], name: str) -> None:
     """Append host graphics and session integration flags to ``podman create``."""
     mnt_rw_rslave = mount_options("rw,rslave")
     mnt_ro = mount_options("ro")
+    runtime_dir = _runtime_directory()
+    display = _resolve_display()
 
-    display = os.environ.get("DISPLAY")
     if display:
-        if Path("/tmp/.X11-unix").is_dir():
+        if X11_SOCKET_DIR.is_dir():
             args.extend(
-                ["--volume", f"/tmp/.X11-unix:/tmp/.X11-unix:{mnt_rw_rslave}"]
+                [
+                    "--volume",
+                    f"{X11_SOCKET_DIR}:{X11_SOCKET_DIR}:{mnt_rw_rslave}",
+                ]
             )
         xauth = persist_xauthority(name)
         if xauth is not None:
@@ -98,17 +163,17 @@ def add_create_args(args: list[str], name: str) -> None:
                 ]
             )
 
-    xdg_runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
-    if xdg_runtime_dir and Path(xdg_runtime_dir).is_dir():
+    if runtime_dir is not None:
+        runtime_path = str(runtime_dir)
         args.extend(
             [
                 "--env",
-                f"XDG_RUNTIME_DIR={xdg_runtime_dir}",
+                f"XDG_RUNTIME_DIR={runtime_path}",
                 "--volume",
-                f"{xdg_runtime_dir}:{xdg_runtime_dir}:{mnt_rw_rslave}",
+                f"{runtime_path}:{runtime_path}:{mnt_rw_rslave}",
             ]
         )
-        bus_path = Path(xdg_runtime_dir, "bus")
+        bus_path = runtime_dir / "bus"
         if bus_path.is_socket():
             args.extend(["--env", f"DBUS_SESSION_BUS_ADDRESS=unix:path={bus_path}"])
         elif os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
@@ -119,12 +184,12 @@ def add_create_args(args: list[str], name: str) -> None:
                 ]
             )
 
-        pulse_dir = Path(xdg_runtime_dir, "pulse")
+        pulse_dir = runtime_dir / "pulse"
         if pulse_dir.is_dir():
             args.extend(["--volume", f"{pulse_dir}:{pulse_dir}:{mnt_rw_rslave}"])
             if os.environ.get("PULSE_SERVER"):
                 args.extend(["--env", f"PULSE_SERVER={os.environ['PULSE_SERVER']}"])
-            elif Path(pulse_dir, "native").is_socket():
+            elif (pulse_dir / "native").is_socket():
                 args.extend(["--env", f"PULSE_SERVER=unix:{pulse_dir}/native"])
 
     if Path("/dev/dri").exists():

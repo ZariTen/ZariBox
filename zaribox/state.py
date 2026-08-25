@@ -36,9 +36,7 @@ class StateStore:
         return path.read_text(encoding="utf-8").strip()
 
     def save_container_hash(self, container_name: str, value: str) -> None:
-        _ = self.container_hash_path(container_name).write_text(
-            value, encoding="utf-8"
-        )
+        _ = self.container_hash_path(container_name).write_text(value, encoding="utf-8")
 
     def saved_packages(self, container_name: str) -> list[str]:
         path = self.packages_path(container_name)

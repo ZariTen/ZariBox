@@ -13,6 +13,7 @@ class CommandResult:
     stdout: str
     stderr: str
 
+
 def command_exists(binary: str) -> bool:
     return shutil.which(binary) is not None
 

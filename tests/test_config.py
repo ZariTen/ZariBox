@@ -47,7 +47,9 @@ def test_normalize_list_none_returns_empty() -> None:
 
 def test_load_config_basic(tmp_path: Path) -> None:
     p = tmp_path / "devbox.yaml"
-    p.write_text("Name: devbox\nImage: archlinux\nPackages:\n  - git\n  - \" neovim \"\n  - \"\"\n")
+    p.write_text(
+        'Name: devbox\nImage: archlinux\nPackages:\n  - git\n  - " neovim "\n  - ""\n'
+    )
     config = load_config(p)
     assert config.name == "devbox"
     assert config.image == "docker.io/library/archlinux:latest"
@@ -79,7 +81,9 @@ def test_load_config_missing_image_raises(tmp_path: Path) -> None:
 
 
 def _dummy_config(backend=None) -> ZariConfig:
-    return ZariConfig(file_path=Path("x.yaml"), name="box", image="archlinux:latest", backend=backend)
+    return ZariConfig(
+        file_path=Path("x.yaml"), name="box", image="archlinux:latest", backend=backend
+    )
 
 
 def test_resolve_backend_defaults_to_podman(monkeypatch) -> None:
@@ -114,7 +118,9 @@ def test_container_identity_hash_differs_on_image() -> None:
 
 def test_container_identity_hash_normalizes_image() -> None:
     c1 = ZariConfig(file_path=Path("x.yaml"), name="box", image="archlinux:latest")
-    c2 = ZariConfig(file_path=Path("x.yaml"), name="box", image="docker.io/library/archlinux:latest")
+    c2 = ZariConfig(
+        file_path=Path("x.yaml"), name="box", image="docker.io/library/archlinux:latest"
+    )
     assert container_identity_hash(c1) == container_identity_hash(c2)
 
 
