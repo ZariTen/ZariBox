@@ -49,7 +49,7 @@ All commands except `create` take a container name: ZariBox remembers which YAML
 | `zaribox apply <name>` | Sync the container to match the config: install packages that are missing, remove ones that were dropped from `Packages:`. |
 | `zaribox status <name>` | Show sync status: whether the container exists, whether the config changed since the last sync, and package drift in both directions. |
 | `zaribox export <name>` | Fetch the packages you installed by hand inside the container and merge them into the `Packages:` block of the YAML file. |
-| `zaribox enter <name>` | Open a shell inside the container. |
+| `zaribox enter <name>` | Open a shell inside the container. If the current host directory is covered by a container bind mount, enter there using its container path; otherwise use the container's configured home directory. |
 | `zaribox list` | List all ZariBox-managed containers, marking which ones are currently running. |
 | `zaribox remove <name>` | Destroy the container after a confirmation prompt. The home directory is preserved; ZariBox's state for it is cleared. |
 
@@ -75,7 +75,7 @@ Run:                  # optional, run as your user after install
 | `Image` | Base image. Short names are expanded to their full `docker.io` reference with a `:latest` tag. |
 | `Backend` | `podman`. |
 | `HomeDir` | Home directory for the container; environment variables like `$USER` are expanded. Defaults to `$XDG_DATA_HOME/zaribox/home/<name>` (usually `~/.local/share/zaribox/home/<name>`). Persists across recreations. |
-| `HomeMount` | When `true`, mounts the host home directory `/home/$USER` read-write at `/run/host/home/$USER` inside the container. |
+| `HomeMount` | When `true`, mounts the host home directory `/home/$USER` read-write at `/run/host/home/$USER` inside the container. `zaribox enter` uses the matching `/run/host/home/$USER/...` path when launched from a directory under the host home. |
 | `ExtraFlags` | Extra flags passed through to `podman create`. |
 | `Packages` | Packages to install when the container is created or synced. |
 | `Run` | Shell commands executed as your user inside the container after package install. |

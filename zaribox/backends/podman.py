@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..shell import CommandResult, command_exists, run_command
 from .podman_graphics import add_create_args, current_graphics_env, refresh_xauthority
-from .podman_mounts import mount_options
+from .podman_mounts import mount_options, mounted_workdir, parse_mounts
 
 
 class PodmanBackend:
@@ -61,6 +61,22 @@ class PodmanBackend:
                 result.stdout.strip() if result.returncode == 0 else ""
             )
         return self._home_cache[name]
+
+    def _container_mounts(self, name: str) -> list[tuple[Path, Path]]:
+        """Return host-to-container paths for mounts on a container."""
+        result = run_command(
+            [
+                "podman",
+                "inspect",
+                "--format",
+                "{{range .Mounts}}{{.Source}}\t{{.Destination}}\n{{end}}",
+                name,
+            ],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return []
+        return parse_mounts(result.stdout)
 
     def _current_graphics_env(self) -> list[str]:
         return current_graphics_env()
@@ -227,7 +243,7 @@ class PodmanBackend:
             self._raise_on_failure(result, "podman exec")
         return result
 
-    def enter(self, name: str) -> int:
+    def enter(self, name: str, current_dir: Path | None = None) -> int:
         preferred_shell = Path(os.environ.get("SHELL", "/bin/sh")).name
         host_uid, host_gid, host_user = self._get_host_identity()
         home_dir = self._container_home(name) or os.environ.get("HOME", "/")
@@ -236,31 +252,39 @@ class PodmanBackend:
         if not self._user_exists(name, host_uid):
             self._ensure_user(name, home_dir)
 
+        host_workdir = current_dir if current_dir is not None else Path.cwd()
+        container_workdir = mounted_workdir(
+            host_workdir, self._container_mounts(name)
+        )
         shell_cmd = (
             f"if command -v {shlex.quote(preferred_shell)} >/dev/null 2>&1; then exec {shlex.quote(preferred_shell)} -l; "
             f"elif command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi"
         )
-        result = subprocess.run(
+        exec_args = [
+            "podman",
+            "exec",
+            "-it",
+            "--user",
+            f"{host_uid}:{host_gid}",
+            "--env",
+            f"USER={host_user}",
+            "--env",
+            f"LOGNAME={host_user}",
+            "--env",
+            f"HOME={home_dir}",
+        ]
+        if container_workdir is not None:
+            exec_args.extend(["--workdir", container_workdir])
+        exec_args.extend(
             [
-                "podman",
-                "exec",
-                "-it",
-                "--user",
-                f"{host_uid}:{host_gid}",
-                "--env",
-                f"USER={host_user}",
-                "--env",
-                f"LOGNAME={host_user}",
-                "--env",
-                f"HOME={home_dir}",
                 *self._current_graphics_env(),
                 name,
                 "sh",
                 "-lc",
                 shell_cmd,
-            ],
-            check=False,
+            ]
         )
+        result = subprocess.run(exec_args, check=False)
         return result.returncode
 
     def post_install(self, name: str, home_dir: str) -> None:
