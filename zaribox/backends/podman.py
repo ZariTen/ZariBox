@@ -140,7 +140,7 @@ class PodmanBackend:
         _, _, host_user = self._get_host_identity()
 
         mnt_home = self._mount_opts("rslave")
-        host_actual_home = os.environ.get("HOME", "").rstrip("/")
+        host_actual_home = os.environ.get("HOME", f"/home/{host_user}").rstrip("/")
 
         args = [
             "podman",
@@ -171,17 +171,19 @@ class PodmanBackend:
             f"{home_dir}:{home_dir}:{mnt_home}",
         ]
 
-        if home_mount:
-            host_home = f"/home/{host_user}"
-            container_home = f"/run/host/home/{host_user}"
+        if home_mount and host_actual_home != home_dir:
             args.extend(
-                ["--volume", f"{host_home}:{container_home}:{self._mount_opts('rw')}"]
+                [
+                    "--volume",
+                    f"{host_actual_home}:{host_actual_home}:{self._mount_opts('rw')}",
+                ]
             )
 
         if (
             host_actual_home
             and not home_dir.startswith(host_actual_home + "/")
             and host_actual_home != home_dir
+            and not home_mount
         ):
             args.extend(
                 ["--volume", f"{host_actual_home}:{host_actual_home}:{mnt_home}"]
@@ -253,9 +255,7 @@ class PodmanBackend:
             self._ensure_user(name, home_dir)
 
         host_workdir = current_dir if current_dir is not None else Path.cwd()
-        container_workdir = mounted_workdir(
-            host_workdir, self._container_mounts(name)
-        )
+        container_workdir = mounted_workdir(host_workdir, self._container_mounts(name))
         shell_cmd = (
             f"if command -v {shlex.quote(preferred_shell)} >/dev/null 2>&1; then exec {shlex.quote(preferred_shell)} -l; "
             f"elif command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi"

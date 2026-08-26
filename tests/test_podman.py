@@ -21,7 +21,7 @@ def test_create_home_mount_adds_host_home_volume(monkeypatch, tmp_path: Path) ->
 
     monkeypatch.setattr("zaribox.backends.podman.run_command", fake_run_command)
     monkeypatch.setenv("USER", "zariuser")
-    monkeypatch.setenv("HOME", "")
+    monkeypatch.setenv("HOME", "/home/zariuser")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "missing-runtime"))
 
@@ -41,7 +41,7 @@ def test_create_home_mount_adds_host_home_volume(monkeypatch, tmp_path: Path) ->
         for index, argument in enumerate(create_args[:-1])
         if argument == "--volume"
     ]
-    assert "/home/zariuser:/run/host/home/zariuser:rw" in mount
+    assert "/home/zariuser:/home/zariuser:rw" in mount
 
 
 def test_create_persists_xauthority_outside_session_runtime(

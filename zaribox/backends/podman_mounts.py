@@ -28,9 +28,7 @@ def parse_mounts(output: str) -> list[tuple[Path, Path]]:
     return mounts
 
 
-def mounted_workdir(
-    host_dir: Path, mounts: Sequence[tuple[Path, Path]]
-) -> str | None:
+def mounted_workdir(host_dir: Path, mounts: Sequence[tuple[Path, Path]]) -> str | None:
     """Translate a host directory through a bind mount, if one exists."""
     try:
         resolved_host_dir = host_dir.resolve()
