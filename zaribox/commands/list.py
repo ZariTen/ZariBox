@@ -4,6 +4,7 @@ from ..backends import make_backend
 from ..config import resolve_backend
 from ..logging import CYN, DIM, GRN, RED, RST, err
 from ..state import StateStore
+from ._common import require_runtime
 
 
 def run_list() -> int:
@@ -14,8 +15,7 @@ def run_list() -> int:
         err(str(exc))
         return 1
 
-    if not backend.runtime_present():
-        err(f"{backend_name} backend is not installed or not in PATH.")
+    if not require_runtime(backend_name, backend):
         return 1
 
     state = StateStore()
@@ -24,8 +24,8 @@ def run_list() -> int:
     print()
 
     found_any = False
-    for containers in state.cache_dir.iterdir():
-        for hash_file in sorted(containers.glob("*.hash")):
+    for container_dir in state.cache_dir.iterdir():
+        for hash_file in sorted(container_dir.glob("*.hash")):
             found_any = True
             name = hash_file.name.removesuffix(".hash")
             if backend.container_exists(name):

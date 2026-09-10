@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from ..config import load_context
 from ..logging import CYN, DIM, GRN, RED, RST, YLW, err
-from ..state import StateStore, container_identity_hash, package_drift
+from ..state import container_identity_hash, package_drift
+from ._common import load_container_context, require_runtime
 from .export import _fetch_installed_packages
 
 
@@ -11,34 +11,40 @@ def run_status(container_name: str | None) -> int:
         err("Container name is required.")
         return 1
 
-    try:
-        state = StateStore(container_name)
-        resolved = state.yaml_path_for(container_name)
-        yaml_path, config, backend_name, backend = load_context(resolved)
-    except (ValueError, RuntimeError) as exc:
-        err(str(exc))
+    context = load_container_context(container_name)
+    if context is None:
+        return 1
+    if not require_runtime(context.backend_name, context.backend):
         return 1
 
-    if not backend.runtime_present():
-        err(f"{backend_name} backend is not installed or not found in PATH.")
-        return 1
-
+    state = context.state
+    config = context.config
     current_hash = container_identity_hash(config)
     saved_hash = state.saved_container_hash(config.name)
 
     desired_packages = config.packages
     saved_packages = state.saved_packages(config.name)
-    export_packages = _fetch_installed_packages(backend, config.name, config.image)
+    exists = context.backend.container_exists(config.name)
+    to_export: list[str] = []
+    if exists:
+        try:
+            export_packages = _fetch_installed_packages(
+                context.backend, config.name, config.image
+            )
+        except RuntimeError as exc:
+            err(str(exc))
+            return 1
+        to_export, _ = package_drift(
+            desired_packages + export_packages, saved_packages
+        )
 
     to_install, to_remove = package_drift(desired_packages, saved_packages)
-    to_export, _ = package_drift(desired_packages + export_packages, saved_packages)
 
     print(f"\n{CYN}ZARIBOX STATUS{RST}")
-    print(f"  {DIM}Config Path:{RST}  {yaml_path}")
+    print(f"  {DIM}Config Path:{RST}  {context.yaml_path}")
     print(f"  {DIM}Container:{RST}    {config.name}")
     print(f"  {DIM}Base Image:{RST}   {config.image}")
 
-    exists = backend.container_exists(config.name)
     env_status = f"{GRN}Active{RST}" if exists else f"{RED}Not Created{RST}"
     print(f"  {DIM}Environment:{RST}  {env_status}")
 
@@ -49,7 +55,9 @@ def run_status(container_name: str | None) -> int:
 
     print(f"\n{CYN}PACKAGE DRIFT ANALYSIS{RST}")
 
-    if to_export:
+    if not exists:
+        print(f"  {DIM}Runtime Sync:{RST} Container is not created.")
+    elif to_export:
         print(f"  {YLW}Runtime Drift Detected ({len(to_export)}){RST}")
         for pkg in to_export:
             print(f"    - {pkg:<22} {DIM}(untracked in container; needs export){RST}")

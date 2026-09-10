@@ -6,6 +6,7 @@ from pathlib import Path
 from ..config import load_context
 from ..logging import err, log, ok, step, warn
 from ..state import StateStore, container_identity_hash
+from ._common import require_runtime
 from .apply import _sync_from_config
 
 
@@ -24,8 +25,7 @@ def run_create(yaml_arg: str | None) -> int:
         err(str(exc))
         return 1
 
-    if not backend.runtime_present():
-        err(f"{backend_name} is not installed or not in PATH.")
+    if not require_runtime(backend_name, backend):
         return 1
 
     name = config.name
@@ -66,16 +66,15 @@ def run_create(yaml_arg: str | None) -> int:
     state.save_container_hash(name, container_identity_hash(config))
     state.save_packages(name, [])
 
-    result = _sync_from_config(config, backend, backend_name)
-    if result != 0:
-        return result
+    if _sync_from_config(config, backend) != 0:
+        return 1
 
     if config.run:
         step("Running post-install commands...")
         try:
             for command_line in config.run:
                 step(f"  $ {command_line}")
-                _ = backend.exec(
+                backend.exec(
                     name,
                     ["bash", "-c", command_line],
                     as_user=True,
