@@ -24,23 +24,24 @@ def run_command(
     check: bool = False,
     capture_output: bool = True,
 ) -> CommandResult:
+    command = list(args)
     completed = subprocess.run(
-        list(args),
+        command,
         check=False,
         capture_output=capture_output,
         text=True,
     )
 
-    stdout = completed.stdout
-    stderr = completed.stderr
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
 
     if check and completed.returncode != 0:
         raise subprocess.CalledProcessError(
-            completed.returncode, list(args), output=stdout, stderr=stderr
+            completed.returncode, command, output=stdout, stderr=stderr
         )
 
     return CommandResult(
-        args=list(args),
+        args=command,
         returncode=completed.returncode,
         stdout=stdout,
         stderr=stderr,

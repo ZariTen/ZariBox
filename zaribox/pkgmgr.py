@@ -45,13 +45,17 @@ def detect_pkgmgr(image: str) -> str:
     return "auto"
 
 
+def _manager(mgr: str) -> tuple[str, str, list[str]]:
+    return _PKG_MANAGERS.get(mgr, _PKG_MANAGERS[_DEFAULT])
+
+
 def install_cmd(mgr: str) -> str:
-    return _PKG_MANAGERS.get(mgr, _PKG_MANAGERS[_DEFAULT])[0]
+    return _manager(mgr)[0]
 
 
 def remove_cmd(mgr: str) -> str:
-    return _PKG_MANAGERS.get(mgr, _PKG_MANAGERS[_DEFAULT])[1]
+    return _manager(mgr)[1]
 
 
 def list_cmd(mgr: str) -> list[str]:
-    return _PKG_MANAGERS.get(mgr, _PKG_MANAGERS[_DEFAULT])[2]
+    return _manager(mgr)[2]

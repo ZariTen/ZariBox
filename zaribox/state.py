@@ -20,14 +20,17 @@ class StateStore:
         )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+    def _cache_path(self, container_name: str, suffix: str) -> Path:
+        return self.cache_dir / f"{container_name}{suffix}"
+
     def container_hash_path(self, container_name: str) -> Path:
-        return self.cache_dir / f"{container_name}.hash"
+        return self._cache_path(container_name, ".hash")
 
     def packages_path(self, container_name: str) -> Path:
-        return self.cache_dir / f"{container_name}.packages"
+        return self._cache_path(container_name, ".packages")
 
     def yaml_path_cache_path(self, container_name: str) -> Path:
-        return self.cache_dir / f"{container_name}.yaml_path"
+        return self._cache_path(container_name, ".yaml_path")
 
     def saved_container_hash(self, container_name: str) -> str:
         path = self.container_hash_path(container_name)
@@ -62,10 +65,7 @@ class StateStore:
             self.packages_path(container_name),
             self.yaml_path_cache_path(container_name),
         ):
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                continue
+            path.unlink(missing_ok=True)
 
         try:
             self.cache_dir.rmdir()

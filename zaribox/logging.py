@@ -13,7 +13,6 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 RST = "\033[0m"
 
-verbose: bool = True
 
 
 def _colored(stream: TextIO) -> bool:
@@ -27,8 +26,7 @@ def _fmt(color: str, label: str, message: str, stream: TextIO) -> str:
 
 
 def _print(message: str, *, stream: TextIO = sys.stdout) -> None:
-    if verbose:
-        print(message, file=stream)
+    print(message, file=stream)
 
 
 def log(message: str) -> None:

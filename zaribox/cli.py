@@ -53,7 +53,3 @@ def main() -> int:
 
     print(f"Unknown command: {command}")
     return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
