@@ -223,7 +223,9 @@ def test_exec_uses_current_wayland_display(monkeypatch, tmp_path: Path) -> None:
         wayland_socket.unlink()
 
     exec_args = next(
-        command for command in commands if command[:2] == ["podman", "exec"]
+        command
+        for command in commands
+        if command[:2] == ["podman", "exec"] and command[-1] == "true"
     )
     exec_env_args = exec_args[: exec_args.index("box")]
     assert "DISPLAY=:0" in exec_env_args
@@ -273,7 +275,9 @@ def test_exec_discovers_graphics_from_available_sockets(
         x11_socket.unlink()
 
     exec_args = next(
-        command for command in commands if command[:2] == ["podman", "exec"]
+        command
+        for command in commands
+        if command[:2] == ["podman", "exec"] and command[-1] == "true"
     )
     exec_env_args = exec_args[: exec_args.index("box")]
     assert "DISPLAY=:0" in exec_env_args
