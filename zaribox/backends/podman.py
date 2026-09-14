@@ -85,12 +85,28 @@ class PodmanBackend:
         refresh_xauthority(name)
         result = run_command(["podman", "start", name], capture_output=True)
         self._raise_on_failure(result, "podman start")
+        self._ensure_machine_id(name)
 
     def _exec_in_container(self, name: str, cmd: str) -> CommandResult:
         return run_command(
             ["podman", "exec", "--user", "0", name, "sh", "-c", cmd],
             capture_output=True,
         )
+
+    def _ensure_machine_id(self, name: str) -> None:
+        script = """
+        if [ ! -s /etc/machine-id ]; then
+            if command -v systemd-machine-id-setup >/dev/null 2>&1; then
+                systemd-machine-id-setup >/dev/null 2>&1 || true
+            fi
+            if [ ! -s /etc/machine-id ] && [ -r /proc/sys/kernel/random/uuid ]; then
+                tr -d '-' < /proc/sys/kernel/random/uuid > /etc/machine-id 2>/dev/null || true
+            fi
+        fi
+        """
+        result = self._exec_in_container(name, script)
+        self._raise_on_failure(result, f"Failed to initialize machine ID in '{name}'")
+
 
     def _user_exists(self, name: str, uid: int) -> bool:
         result = self._exec_in_container(name, f"getent passwd {uid}")

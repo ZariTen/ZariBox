@@ -140,6 +140,7 @@ def current_graphics_env() -> list[str]:
 def add_create_args(args: list[str], name: str) -> None:
     """Append host graphics and session integration flags to ``podman create``."""
     mnt_rw_rslave = mount_options("rw,rslave")
+    mnt_ro_rslave = mount_options("ro,rslave")
     mnt_ro = mount_options("ro")
     runtime_dir = _runtime_directory()
     display = _resolve_display()
@@ -149,7 +150,7 @@ def add_create_args(args: list[str], name: str) -> None:
             args.extend(
                 [
                     "--volume",
-                    f"{X11_SOCKET_DIR}:{X11_SOCKET_DIR}:{mnt_rw_rslave}",
+                    f"{X11_SOCKET_DIR}:{X11_SOCKET_DIR}:{mnt_ro_rslave}",
                 ]
             )
         xauth = persist_xauthority(name)

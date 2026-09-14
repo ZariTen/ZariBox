@@ -155,6 +155,43 @@ def test_wayland_only_does_not_mount_xauthority(monkeypatch, tmp_path: Path) -> 
     assert all(str(source) not in argument for argument in create_args)
 
 
+def test_create_mounts_x11_socket_directory_read_only(
+    monkeypatch, tmp_path: Path
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run_command(
+        args: list[str], *, capture_output: bool = True, check: bool = False
+    ) -> CommandResult:
+        del capture_output, check
+        command = list(args)
+        commands.append(command)
+        return CommandResult(command, 0, "", "")
+
+    x11_dir = tmp_path / "x11"
+    x11_dir.mkdir()
+
+    monkeypatch.setattr("zaribox.backends.podman.run_command", fake_run_command)
+    monkeypatch.setattr("zaribox.backends.podman_graphics.X11_SOCKET_DIR", x11_dir)
+    monkeypatch.setenv("USER", "zariuser")
+    monkeypatch.setenv("HOME", str(tmp_path / "host-home"))
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "missing-runtime"))
+
+    PodmanBackend().create("box", "archlinux:latest", str(tmp_path / "home"))
+
+    create_args = next(
+        command for command in commands if command[:2] == ["podman", "create"]
+    )
+    mounts = [
+        create_args[index + 1]
+        for index, argument in enumerate(create_args[:-1])
+        if argument == "--volume"
+    ]
+    assert f"{x11_dir}:{x11_dir}:ro,rslave" in mounts
+
+
 def test_exec_uses_current_wayland_display(monkeypatch, tmp_path: Path) -> None:
     runtime_dir = tmp_path / "runtime"
     runtime_dir.mkdir()
