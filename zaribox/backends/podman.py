@@ -4,44 +4,20 @@ import os
 import shlex
 import subprocess
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..shell import CommandResult, command_exists, run_command
-from .podman_graphics import add_create_args, current_graphics_env, refresh_xauthority
+from .podman_create import (
+    CreatePolicy,
+    MountSpec,
+    build_create_command,
+    resolve_create_policy,
+)
+from .podman_graphics import current_graphics_env, refresh_xauthority
 from .podman_mounts import mount_options, mounted_workdir, parse_mounts
+from .podman_users import machine_id_setup_script, user_setup_script
 
-
-@dataclass(frozen=True, slots=True)
-class MountSpec:
-    source: str | Path
-    target: str | Path
-    options: str = "rw"
-
-
-@dataclass(frozen=True, slots=True)
-class CreatePolicy:
-    """Structured Podman create options; ``agent`` enables the hardened profile."""
-
-    security_profile: str = "default"
-    network: str | None = None
-    mounts: Sequence[MountSpec] = ()
-    env: Mapping[str, str] = field(default_factory=dict)
-    workdir: str | None = None
-    resource_limits: Mapping[str, str | int | float] = field(default_factory=dict)
-    read_only_root: bool = False
-    writable_tmpfs: Sequence[str] = ()
-    labels: Mapping[str, str] = field(default_factory=dict)
-    command_timeout: float | None = None
-
-
-_RESOURCE_FLAGS = {
-    "cpus": "--cpus",
-    "memory": "--memory",
-    "memory_swap": "--memory-swap",
-    "pids_limit": "--pids-limit",
-    "cpuset_cpus": "--cpuset-cpus",
-}
+__all__ = ["CreatePolicy", "MountSpec", "PodmanBackend"]
 
 
 class PodmanBackend:
@@ -147,17 +123,7 @@ class PodmanBackend:
         )
 
     def _ensure_machine_id(self, name: str) -> None:
-        script = """
-        if [ ! -s /etc/machine-id ]; then
-            if command -v systemd-machine-id-setup >/dev/null 2>&1; then
-                systemd-machine-id-setup >/dev/null 2>&1 || true
-            fi
-            if [ ! -s /etc/machine-id ] && [ -r /proc/sys/kernel/random/uuid ]; then
-                tr -d '-' < /proc/sys/kernel/random/uuid > /etc/machine-id 2>/dev/null || true
-            fi
-        fi
-        """
-        result = self._exec_in_container(name, script)
+        result = self._exec_in_container(name, machine_id_setup_script())
         self._raise_on_failure(result, f"Failed to initialize machine ID in '{name}'")
 
     def _user_exists(self, name: str, uid: int) -> bool:
@@ -170,22 +136,13 @@ class PodmanBackend:
         host_uid, host_gid, host_user = self._get_host_identity()
         self._start_if_needed(name)
 
-        sudo_setup = ""
-        if allow_passwordless_sudo:
-            sudo_setup = f"""
-        mkdir -p /etc/sudoers.d
-        printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\\n' {shlex.quote(host_user)} > /etc/sudoers.d/90-zaribox-user
-        chmod 0440 /etc/sudoers.d/90-zaribox-user
-            """
-        script = f"""
-        getent group {host_gid} >/dev/null 2>&1 ||
-            groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null ||
-            addgroup -g {host_gid} {shlex.quote(host_user)}
-        getent passwd {host_uid} >/dev/null 2>&1 ||
-            useradd -M -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null ||
-            adduser -H -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} -D {shlex.quote(host_user)}
-        {sudo_setup}
-        """
+        script = user_setup_script(
+            uid=host_uid,
+            gid=host_gid,
+            user=host_user,
+            home_dir=home_dir,
+            allow_passwordless_sudo=allow_passwordless_sudo,
+        )
         result = self._exec_in_container(name, script)
         self._raise_on_failure(
             result, f"Failed to initialize user inside container '{name}'"
@@ -219,126 +176,33 @@ class PodmanBackend:
         read_only_root: bool | None = None,
         writable_tmpfs: Sequence[str] | None = None,
     ) -> None:
-        selected = policy or CreatePolicy()
-        profile = security_profile or selected.security_profile
-        if profile not in {"default", "agent"}:
-            raise ValueError("security_profile must be 'default' or 'agent'")
-        agent_mode = profile == "agent"
-        if agent_mode and extra_flags.strip():
-            raise ValueError(
-                "extra_flags are not allowed with the agent security profile"
-            )
-
-        selected_network = network if network is not None else selected.network
-        if agent_mode:
-            selected_network = selected_network or "none"
-            if selected_network == "host":
-                raise ValueError("host networking is not allowed in agent mode")
-        else:
-            selected_network = selected_network or "host"
-
-        selected_mounts = mounts if mounts is not None else selected.mounts
-        selected_env = env if env is not None else selected.env
-        selected_workdir = workdir if workdir is not None else selected.workdir
-        selected_limits = (
-            resource_limits if resource_limits is not None else selected.resource_limits
+        selected = resolve_create_policy(
+            policy=policy,
+            extra_flags=extra_flags,
+            security_profile=security_profile,
+            network=network,
+            mounts=mounts,
+            env=env,
+            workdir=workdir,
+            resource_limits=resource_limits,
+            read_only_root=read_only_root,
+            writable_tmpfs=writable_tmpfs,
         )
-        selected_read_only = (
-            read_only_root if read_only_root is not None else selected.read_only_root
-        )
-        selected_tmpfs = (
-            writable_tmpfs if writable_tmpfs is not None else selected.writable_tmpfs
-        )
-        selected_labels = selected.labels
-
-        unknown_limits = set(selected_limits) - set(_RESOURCE_FLAGS)
-        if unknown_limits:
-            raise ValueError(
-                f"Unsupported resource limit(s): {', '.join(sorted(unknown_limits))}"
-            )
-
         os.makedirs(home_dir, exist_ok=True)
         home_dir = home_dir.rstrip("/")
         _, _, host_user = self._get_host_identity()
-        mnt_home = self._mount_opts("rslave")
-        host_actual_home = os.environ.get("HOME", f"/home/{host_user}").rstrip("/")
-
-        args = [
-            "podman",
-            "create",
-            "--name",
-            name,
-            "--hostname",
-            name,
-            "--label",
-            "io.zaribox.managed=true",
-            "--label",
-            f"io.zaribox.home={home_dir}",
-            "--label",
-            f"io.zaribox.security-profile={profile}",
-            "--network",
-            selected_network,
-            "--ipc",
-            "private" if agent_mode else "host",
-            "--env",
-            f"HOME={home_dir}",
-            "--env",
-            f"USER={host_user}",
-            "--env",
-            f"LOGNAME={host_user}",
-            "--workdir",
-            selected_workdir or home_dir,
-            "--volume",
-            f"{home_dir}:{home_dir}:{mnt_home}",
-        ]
-
-        if agent_mode:
-            args.extend(["--cap-drop", "all", "--security-opt", "no-new-privileges"])
-        else:
-            args.extend(["--security-opt", "label=disable"])
-        if selected_read_only:
-            args.append("--read-only")
-        for tmpfs in selected_tmpfs:
-            args.extend(["--tmpfs", tmpfs])
-        for key, value in selected_limits.items():
-            args.extend([_RESOURCE_FLAGS[key], str(value)])
-        for mount in selected_mounts:
-            args.extend(
-                [
-                    "--volume",
-                    f"{mount.source}:{mount.target}:{self._mount_opts(mount.options)}",
-                ]
-            )
-        for key, value in selected_env.items():
-            args.extend(["--env", f"{key}={value}"])
-        for key, value in selected_labels.items():
-            if key in {
-                "io.zaribox.managed",
-                "io.zaribox.home",
-                "io.zaribox.security-profile",
-            }:
-                raise ValueError(f"Reserved container label: {key}")
-            args.extend(["--label", f"{key}={value}"])
-
-        if home_mount and host_actual_home != home_dir:
-            args.extend(
-                [
-                    "--volume",
-                    f"{host_actual_home}:{host_actual_home}:{self._mount_opts('rw')}",
-                ]
-            )
-        if self._is_rootless():
-            args.extend(["--userns", "keep-id"])
-
-        term = os.environ.get("TERM")
-        if term:
-            args.extend(["--env", f"TERM={term}"])
-        if not agent_mode:
-            add_create_args(args, name)
-        if extra_flags.strip():
-            args.extend(shlex.split(extra_flags))
-
-        args.extend([image, "sleep", "infinity"])
+        args = build_create_command(
+            name=name,
+            image=image,
+            home_dir=home_dir,
+            host_user=host_user,
+            host_actual_home=os.environ.get("HOME", f"/home/{host_user}").rstrip("/"),
+            home_mount=home_mount,
+            rootless=self._is_rootless(),
+            extra_flags=extra_flags,
+            policy=selected,
+            mount_options=self._mount_opts,
+        )
         create_options: dict[str, object] = {"capture_output": True}
         if selected.command_timeout is not None:
             create_options["timeout"] = selected.command_timeout
@@ -346,11 +210,11 @@ class PodmanBackend:
         create_result = run_command(args, **create_options)  # type: ignore[arg-type]
         self._raise_on_failure(create_result, "podman create")
 
-        self._agent_cache[name] = agent_mode
-        self._start_if_needed(name, agent_mode=agent_mode)
-        if not (agent_mode and selected_read_only):
+        self._agent_cache[name] = selected.agent_mode
+        self._start_if_needed(name, agent_mode=selected.agent_mode)
+        if not (selected.agent_mode and selected.read_only_root):
             self._ensure_user(
-                name, home_dir, allow_passwordless_sudo=not agent_mode
+                name, home_dir, allow_passwordless_sudo=not selected.agent_mode
             )
 
     def exec(
