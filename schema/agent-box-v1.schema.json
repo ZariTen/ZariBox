@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zaribox.dev/schema/agent-box-v1.schema.json",
+  "title": "ZariBox AgentBox v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ApiVersion", "Kind", "Runtime"],
+  "properties": {
+    "ApiVersion": {"const": "zaribox.dev/v1"},
+    "Kind": {"const": "AgentBox"},
+    "Metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "Name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+        "TTL": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {"type": "string", "pattern": "^(?:[0-9]+(?:\\.[0-9]+)?[smhdw])+$"}
+          ]
+        },
+        "Labels": {"type": "object", "additionalProperties": {"type": "string"}},
+        "Annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "Workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeDir": {"type": "string", "minLength": 1},
+        "HomeMount": {"const": false},
+        "Mounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["Source", "Target"],
+            "properties": {
+              "Source": {"type": "string", "minLength": 1},
+              "Target": {"type": "string", "pattern": "^/"},
+              "ReadOnly": {"type": "boolean"},
+              "Options": {"type": "array", "items": {"enum": ["nodev", "nosuid", "noexec"]}}
+            }
+          }
+        }
+      }
+    },
+    "Runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Image"],
+      "properties": {
+        "Image": {"type": "string", "minLength": 1},
+        "Backend": {"const": "podman"},
+        "Packages": {"type": "array", "items": {"type": "string"}},
+        "Run": {"type": "array", "items": {"type": "string"}},
+        "Env": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "additionalProperties": {"type": "string"}
+        },
+        "Workdir": {"type": "string", "pattern": "^/"}
+      }
+    },
+    "Resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "CPUs": {"type": "number", "exclusiveMinimum": 0},
+        "Memory": {"type": "string", "minLength": 1},
+        "PidsLimit": {"type": "integer", "minimum": 1}
+      }
+    },
+    "Security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "Network": {"enum": ["none", "private", "slirp4netns", "pasta"]},
+        "Profile": {"enum": ["agent", "restricted"]},
+        "Privileged": {"const": false},
+        "ReadOnlyRootFilesystem": {"type": "boolean"}
+      }
+    }
+  }
+}

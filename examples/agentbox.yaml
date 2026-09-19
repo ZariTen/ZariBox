@@ -1,0 +1,54 @@
+# Isolated ZariBox environment for an AI/coding agent.
+# Mount paths are resolved relative to this file. Copy this manifest to the
+# project root if you want Source: . to expose the whole project.
+#
+# Try:
+#   zaribox validate examples/agentbox.yaml --json
+#   zaribox plan examples/agentbox.yaml --json
+#   zaribox ensure examples/agentbox.yaml --json
+#   zaribox exec example-agent --json -- python --version
+#   zaribox remove example-agent --force --json
+
+ApiVersion: zaribox.dev/v1
+Kind: AgentBox
+
+Metadata:
+  Name: example-agent
+  # The container is removed the next time `zaribox cleanup` runs after expiry.
+  TTL: 1h
+  Labels:
+    purpose: coding-agent
+
+Workspace:
+  # AgentBox never mounts the host home. Every host path must be explicit.
+  Mounts:
+    - Source: .
+      Target: /workspace
+      ReadOnly: false
+      Options:
+        - nodev
+        - nosuid
+
+Runtime:
+  # For reproducible automation, replace this tag with an image digest.
+  Image: python:3.12
+  Workdir: /workspace
+  Packages:
+    - git
+  Run:
+    - python --version
+  Env:
+    PYTHONDONTWRITEBYTECODE: "1"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+Resources:
+  CPUs: 2
+  Memory: 2GiB
+  PidsLimit: 256
+
+Security:
+  Profile: agent
+  # Package installation needs network access. Use `none` with a prebuilt image.
+  Network: slirp4netns
+  Privileged: false
+  ReadOnlyRootFilesystem: false

@@ -5,6 +5,7 @@ from ..backends import PodmanBackend
 from ..logging import err, ok, step
 from ..models import ZariConfig
 from ..pkgmgr import detect_pkgmgr, list_cmd
+from ..project_state import atomic_write
 from ._common import load_container_context, require_runtime
 
 
@@ -35,7 +36,7 @@ def _merge_into_config(
         )
     else:
         text = text.rstrip("\n") + "\n" + block
-    yaml_path.write_text(text, encoding="utf-8")
+    atomic_write(yaml_path, text)
     return added
 
 
@@ -66,7 +67,5 @@ def run_pull(container_name: str) -> int:
         ok("Nothing new — packages file already up to date.")
         return 0
 
-    ok(
-        f"Added {len(added)} package(s) to {context.yaml_path.name}: {' '.join(added)}"
-    )
+    ok(f"Added {len(added)} package(s) to {context.yaml_path.name}: {' '.join(added)}")
     return 0

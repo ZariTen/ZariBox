@@ -20,7 +20,7 @@ def test_resolve_image_bare_name() -> None:
 
 
 def test_resolve_image_with_tag() -> None:
-    assert _resolve_image("archlinux:rolling") == "archlinux:rolling"
+    assert _resolve_image("archlinux:rolling") == "docker.io/library/archlinux:rolling"
 
 
 def test_resolve_image_external_registry_unchanged() -> None:
@@ -122,6 +122,18 @@ def test_container_identity_hash_normalizes_image() -> None:
         file_path=Path("x.yaml"), name="box", image="docker.io/library/archlinux:latest"
     )
     assert container_identity_hash(c1) == container_identity_hash(c2)
+
+
+def test_container_identity_hash_differs_for_effective_agent_policy() -> None:
+    desktop = ZariConfig(file_path=Path("x.yaml"), name="box", image="alpine:latest")
+    agent = ZariConfig(
+        file_path=Path("x.yaml"),
+        name="box",
+        image="alpine:latest",
+        api_version="zaribox.dev/v1",
+        kind="AgentBox",
+    )
+    assert container_identity_hash(desktop) != container_identity_hash(agent)
 
 
 def test_container_identity_hash_differs_on_home_mount() -> None:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 
 from .models import ZariConfig
+from .project_state import atomic_write
 
 
 def _config_dir() -> Path:
@@ -18,7 +20,6 @@ class StateStore:
             if container_name != ""
             else _config_dir() / "zaribox"
         )
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _cache_path(self, container_name: str, suffix: str) -> Path:
         return self.cache_dir / f"{container_name}{suffix}"
@@ -39,7 +40,7 @@ class StateStore:
         return path.read_text(encoding="utf-8").strip()
 
     def save_container_hash(self, container_name: str, value: str) -> None:
-        _ = self.container_hash_path(container_name).write_text(value, encoding="utf-8")
+        atomic_write(self.container_hash_path(container_name), value)
 
     def saved_packages(self, container_name: str) -> list[str]:
         path = self.packages_path(container_name)
@@ -51,13 +52,13 @@ class StateStore:
     def save_packages(self, container_name: str, packages: list[str]) -> None:
         path = self.packages_path(container_name)
         if not packages:
-            _ = path.write_text("", encoding="utf-8")
+            atomic_write(path, "")
             return
 
         package_lines = sorted(
             {package.strip() for package in packages if package.strip()}
         )
-        _ = path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
+        atomic_write(path, "\n".join(package_lines) + "\n")
 
     def clear_cache(self, container_name: str) -> None:
         for path in (
@@ -85,9 +86,7 @@ class StateStore:
             stored = f"~/{relative}"
         except ValueError:
             stored = str(yaml_path)
-        _ = self.yaml_path_cache_path(container_name).write_text(
-            stored, encoding="utf-8"
-        )
+        atomic_write(self.yaml_path_cache_path(container_name), stored)
 
 
 def _normalize_image(image: str) -> str:
@@ -100,10 +99,51 @@ def _normalize_image(image: str) -> str:
 
 
 def container_identity_hash(config: ZariConfig) -> str:
-    payload = f"{_normalize_image(config.image)}\n{config.home_dir or ''}\n{config.extra_flags}\n"
-    if config.home_mount:
-        payload += "HomeMount=true\n"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    requested_profile = (config.profile or "").lower()
+    agent_profile = config.kind == "AgentBox" or requested_profile in {
+        "agent",
+        "restricted",
+    }
+    effective_profile = "agent" if agent_profile else "default"
+    effective_network = config.network or ("none" if agent_profile else "host")
+    payload = {
+        "name": config.name,
+        "image": _normalize_image(config.image),
+        "backend": config.backend or "podman",
+        "home_dir": config.home_dir or "",
+        "home_mount": config.home_mount,
+        "extra_flags": config.extra_flags,
+        "mounts": [
+            {
+                "source": mount.source,
+                "target": mount.target,
+                "read_only": mount.read_only,
+                "options": list(mount.options),
+            }
+            for mount in config.mounts
+        ],
+        "env": dict(sorted(config.env.items())),
+        "workdir": config.workdir,
+        "run": list(config.run),
+        "network": effective_network,
+        "profile": effective_profile,
+        "ipc": "private" if agent_profile else "host",
+        "graphics": not agent_profile,
+        "resources": {
+            "cpus": config.resources.cpus
+            if config.resources.cpus is not None
+            else (2 if agent_profile else None),
+            "memory": config.resources.memory
+            if config.resources.memory is not None
+            else ("2g" if agent_profile else None),
+            "pids_limit": config.resources.pids_limit
+            if config.resources.pids_limit is not None
+            else (256 if agent_profile else None),
+        },
+        "read_only_root": config.security.read_only_root_filesystem,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def package_drift(desired: list[str], saved: list[str]) -> tuple[list[str], list[str]]:

@@ -34,9 +34,7 @@ def run_status(container_name: str | None) -> int:
         except RuntimeError as exc:
             err(str(exc))
             return 1
-        to_export, _ = package_drift(
-            desired_packages + export_packages, saved_packages
-        )
+        to_export, _ = package_drift(desired_packages + export_packages, saved_packages)
 
     to_install, to_remove = package_drift(desired_packages, saved_packages)
 

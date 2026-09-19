@@ -45,13 +45,18 @@ All commands except `create` take a container name: ZariBox remembers which YAML
 
 | Command | Description |
 | --- | --- |
-| `zaribox create [file.yaml]` | Create a container from a YAML config. If the container already exists it is recreated (home dir is preserved). With no file argument, the only `*.yaml`/`*.yml` in the current directory is used; if there are several, you must pass one explicitly. |
-| `zaribox apply <name>` | Sync the container to match the config: install packages that are missing, remove ones that were dropped from `Packages:`. |
-| `zaribox status <name>` | Show sync status: whether the container exists, whether the config changed since the last sync, and package drift in both directions. |
-| `zaribox export <name>` | Fetch the packages you installed by hand inside the container and merge them into the `Packages:` block of the YAML file. |
-| `zaribox enter <name>` | Open a shell inside the container. If the current host directory is covered by a container bind mount, enter there using its container path; otherwise use the container's configured home directory. |
-| `zaribox list` | List all ZariBox-managed containers, marking which ones are currently running. |
-| `zaribox remove <name>` | Destroy the container after a confirmation prompt. The home directory is preserved; ZariBox's state for it is cleared. |
+| `zaribox validate [file.yaml]` | Strictly validate and normalize a manifest without creating state. |
+| `zaribox plan [file-or-name]` | Show deterministic reconciliation actions without changing anything. |
+| `zaribox ensure [file.yaml]` | Create or reconcile a container. Destructive changes require `--force`. |
+| `zaribox create [file.yaml]` | Compatibility command that always recreates an existing container while preserving its dedicated home directory. |
+| `zaribox apply <name>` | Reconcile a managed container; package removals or recreation require `--force`. |
+| `zaribox inspect <name>` / `status` | Return container, configuration, image, policy, and package drift state. |
+| `zaribox exec <name> -- command ...` | Run a bounded non-interactive command. Supports timeout, output limit, workdir, environment, and JSON results. |
+| `zaribox export <name>` | Fetch explicitly installed packages and atomically merge them into the manifest. |
+| `zaribox enter <name>` | Open an interactive shell inside a desktop container. |
+| `zaribox list` | List project-scoped managed containers and their runtime state. |
+| `zaribox remove <name>` | Destroy the container after confirmation. Use `--force` for non-interactive use; the home directory is preserved. |
+| `zaribox cleanup` | Remove expired AgentBoxes and stale operation leases. |
 
 ## YAML reference
 
@@ -75,16 +80,80 @@ Run:                  # optional, run as your user after install
 | `Image` | Base image. Short names are expanded to their full `docker.io` reference with a `:latest` tag. |
 | `Backend` | `podman`. |
 | `HomeDir` | Home directory for the container; environment variables like `$USER` are expanded. Defaults to `$XDG_DATA_HOME/zaribox/home/<name>` (usually `~/.local/share/zaribox/home/<name>`). Persists across recreations. |
-| `HomeMount` | When `true`, mounts the host home directory `/home/$USER` read-write at `/run/host/home/$USER` inside the container. `zaribox enter` uses the matching `/run/host/home/$USER/...` path when launched from a directory under the host home. |
+| `HomeMount` | Desktop-only compatibility option. When `true`, mounts the host home directory read-write at the same absolute path. It is rejected for AgentBox manifests. Host home is never mounted implicitly. |
 | `ExtraFlags` | Extra flags passed through to `podman create`. |
 | `Packages` | Packages to install when the container is created or synced. |
 | `Run` | Shell commands executed as your user inside the container after package install. |
 
-The package manager is auto-detected from the image name: `arch`/`manjaro`/`endeavour` → pacman, `ubuntu`/`debian`/`pop`/`mint` → apt, `fedora`/`centos`/`rhel` → dnf, `opensuse`/`suse` → zypper, `alpine` → apk, `void` → xbps. Unknown images fall back to apt. `export` reads the distro's list of *explicitly installed* packages, so packages pulled in as dependencies are not added to your config.
+The package manager is inferred from known image names. For unknown images ZariBox probes for a supported package manager inside the container instead of assuming apt. `export` reads the distro's list of *explicitly installed* packages, so packages pulled in as dependencies are not added to your config.
 
 ### GUI applications
 
-On Linux, ZariBox mounts the host's X11/Wayland runtime sockets when the container is created and forwards the current `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_SESSION_TYPE`, and `XDG_RUNTIME_DIR` values whenever it enters or executes a command. If those variables are not exported by the host shell, an unambiguous active socket is detected automatically. Containers created before the graphical runtime mount was available must be recreated for GUI applications to work.
+Desktop manifests mount the host's X11/Wayland runtime sockets and forward graphical environment values. AgentBox manifests disable all graphical integration.
+
+## Isolated AgentBox manifests
+
+Use the versioned `AgentBox` format for automation and AI coding agents. Unknown fields and malformed values are rejected. The JSON Schema is available at [`schema/agent-box-v1.schema.json`](schema/agent-box-v1.schema.json).
+
+```yaml
+ApiVersion: zaribox.dev/v1
+Kind: AgentBox
+Metadata:
+  Name: lint-session
+  TTL: 30m
+Workspace:
+  Mounts:
+    - Source: .
+      Target: /workspace
+      ReadOnly: false
+Runtime:
+  Image: docker.io/library/python:3.12
+  Workdir: /workspace
+  Env:
+    PYTHONDONTWRITEBYTECODE: "1"
+Resources:
+  CPUs: 2
+  Memory: 2GiB
+  PidsLimit: 256
+Security:
+  Profile: agent
+  Network: none
+```
+
+AgentBox defaults differ deliberately from desktop boxes:
+
+- private IPC and no network unless explicitly requested;
+- no host-home or graphical/session mounts;
+- all Linux capabilities dropped and privilege escalation disabled;
+- default limits of 2 CPUs, 2 GiB memory, and 256 processes;
+- explicit mounts restricted to the manifest directory by default;
+- no `ExtraFlags`, host network, privileged mode, or `HomeMount`;
+- project-scoped state, operation locking, bounded execution, and optional TTL cleanup.
+
+Set `ZARIBOX_ALLOWED_MOUNT_ROOTS` to an OS-path-separated list to let AgentBox manifests mount other host directories. This is a server/operator policy: manifests cannot expand the allowlist themselves.
+
+If `ReadOnlyRootFilesystem` is enabled, use an image that already contains all dependencies; it cannot be combined with `Packages` or `Run` because provisioning mutates the root filesystem.
+
+Package installation needs network access. Set `Security.Network` to `slirp4netns`, `pasta`, or `private` during use when the image is not prebuilt. `none` is the safest default.
+
+### Machine-readable operation
+
+All non-interactive commands support `--json`; the flag can appear before or after the command. JSON mode writes exactly one versioned document to stdout and errors remain structured.
+
+```bash
+zaribox validate agent.yaml --json
+zaribox plan agent.yaml --json
+zaribox ensure agent.yaml --json
+zaribox exec lint-session --timeout 300 --max-output-bytes 1048576 --json -- pytest -q
+zaribox inspect lint-session --json
+zaribox remove lint-session --force --json
+```
+
+`exec` uses an argument vector by default. Shell interpretation must be requested explicitly with `--shell`. Interactive `enter` intentionally rejects JSON mode.
+
+State is stored below `$XDG_STATE_HOME/zaribox` (usually `~/.local/state/zaribox`) and keyed by the canonical manifest path, avoiding state collisions between projects. Podman container names remain host-global, so manifests running at the same time still need unique `Metadata.Name` values; ownership labels prevent one project from replacing another project's box. Existing state below `$XDG_CONFIG_HOME/zaribox` is read and migrated lazily. Override the state location with `ZARIBOX_STATE_HOME` for fully isolated agent sessions.
+
+Provisioning commands and image creation are bounded to 900 seconds by default. Operators can set `ZARIBOX_PROVISION_TIMEOUT` to a positive number of seconds.
 
 ## Install
 

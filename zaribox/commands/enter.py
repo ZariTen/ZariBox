@@ -12,6 +12,14 @@ def run_enter(container_name: str) -> int:
         return 1
 
     name = context.config.name
+    if context.config.kind == "AgentBox" or context.config.profile in {
+        "agent",
+        "restricted",
+    }:
+        err(
+            "Interactive enter is disabled for agent-profile containers; use 'zaribox exec'."
+        )
+        return 1
     try:
         if not context.backend.container_exists(name):
             warn(f"Container '{name}' does not exist.")

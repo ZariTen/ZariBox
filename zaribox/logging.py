@@ -13,10 +13,16 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 RST = "\033[0m"
 
+_COLOR_ENABLED = True
+
+
+def set_color_enabled(enabled: bool) -> None:
+    global _COLOR_ENABLED
+    _COLOR_ENABLED = enabled
 
 
 def _colored(stream: TextIO) -> bool:
-    return hasattr(stream, "isatty") and stream.isatty()
+    return _COLOR_ENABLED and hasattr(stream, "isatty") and stream.isatty()
 
 
 def _fmt(color: str, label: str, message: str, stream: TextIO) -> str:

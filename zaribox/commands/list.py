@@ -24,7 +24,8 @@ def run_list() -> int:
     print()
 
     found_any = False
-    for container_dir in state.cache_dir.iterdir():
+    container_dirs = state.cache_dir.iterdir() if state.cache_dir.is_dir() else ()
+    for container_dir in container_dirs:
         for hash_file in sorted(container_dir.glob("*.hash")):
             found_any = True
             name = hash_file.name.removesuffix(".hash")
