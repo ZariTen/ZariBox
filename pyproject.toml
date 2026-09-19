@@ -20,6 +20,9 @@ dependencies = [
 [project.scripts]
 zaribox = "zaribox.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["zaribox*"]
+
 [tool.setuptools.dynamic]
 version = {attr = "zaribox.__version__"}
 

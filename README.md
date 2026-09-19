@@ -91,69 +91,42 @@ The package manager is inferred from known image names. For unknown images ZariB
 
 Desktop manifests mount the host's X11/Wayland runtime sockets and forward graphical environment values. AgentBox manifests disable all graphical integration.
 
-## Isolated AgentBox manifests
+## AgentBox for AI agents
 
-Use the versioned `AgentBox` format for automation and AI coding agents. Unknown fields and malformed values are rejected. The JSON Schema is available at [`schema/agent-box-v1.schema.json`](schema/agent-box-v1.schema.json).
+Use a versioned `AgentBox` manifest when an agent needs an isolated workspace. Unlike legacy desktop boxes, AgentBox disables host-home and GUI access, restricts mounts, drops Linux capabilities, applies resource limits, and supports automatic expiry.
 
 ```yaml
 ApiVersion: zaribox.dev/v1
 Kind: AgentBox
 Metadata:
-  Name: lint-session
-  TTL: 30m
+  Name: coding-agent
+  TTL: 1h
 Workspace:
   Mounts:
     - Source: .
       Target: /workspace
-      ReadOnly: false
 Runtime:
-  Image: docker.io/library/python:3.12
+  Image: python:3.12
   Workdir: /workspace
-  Env:
-    PYTHONDONTWRITEBYTECODE: "1"
 Resources:
   CPUs: 2
   Memory: 2GiB
-  PidsLimit: 256
 Security:
   Profile: agent
   Network: none
 ```
 
-AgentBox defaults differ deliberately from desktop boxes:
-
-- private IPC and no network unless explicitly requested;
-- no host-home or graphical/session mounts;
-- all Linux capabilities dropped and privilege escalation disabled;
-- default limits of 2 CPUs, 2 GiB memory, and 256 processes;
-- explicit mounts restricted to the manifest directory by default;
-- no `ExtraFlags`, host network, privileged mode, or `HomeMount`;
-- project-scoped state, operation locking, bounded execution, and optional TTL cleanup.
-
-Set `ZARIBOX_ALLOWED_MOUNT_ROOTS` to an OS-path-separated list to let AgentBox manifests mount other host directories. This is a server/operator policy: manifests cannot expand the allowlist themselves.
-
-If `ReadOnlyRootFilesystem` is enabled, use an image that already contains all dependencies; it cannot be combined with `Packages` or `Run` because provisioning mutates the root filesystem.
-
-Package installation needs network access. Set `Security.Network` to `slirp4netns`, `pasta`, or `private` during use when the image is not prebuilt. `none` is the safest default.
-
-### Machine-readable operation
-
-All non-interactive commands support `--json`; the flag can appear before or after the command. JSON mode writes exactly one versioned document to stdout and errors remain structured.
+A complete example is available at [`examples/agentbox.yaml`](examples/agentbox.yaml), with its machine-readable definition in [`schema/agent-box-v1.schema.json`](schema/agent-box-v1.schema.json).
 
 ```bash
-zaribox validate agent.yaml --json
-zaribox plan agent.yaml --json
-zaribox ensure agent.yaml --json
-zaribox exec lint-session --timeout 300 --max-output-bytes 1048576 --json -- pytest -q
-zaribox inspect lint-session --json
-zaribox remove lint-session --force --json
+zaribox validate agentbox.yaml --json
+zaribox ensure agentbox.yaml --json
+zaribox exec coding-agent --json -- pytest -q
+zaribox inspect coding-agent --json
+zaribox remove coding-agent --force --json
 ```
 
-`exec` uses an argument vector by default. Shell interpretation must be requested explicitly with `--shell`. Interactive `enter` intentionally rejects JSON mode.
-
-State is stored below `$XDG_STATE_HOME/zaribox` (usually `~/.local/state/zaribox`) and keyed by the canonical manifest path, avoiding state collisions between projects. Podman container names remain host-global, so manifests running at the same time still need unique `Metadata.Name` values; ownership labels prevent one project from replacing another project's box. Existing state below `$XDG_CONFIG_HOME/zaribox` is read and migrated lazily. Override the state location with `ZARIBOX_STATE_HOME` for fully isolated agent sessions.
-
-Provisioning commands and image creation are bounded to 900 seconds by default. Operators can set `ZARIBOX_PROVISION_TIMEOUT` to a positive number of seconds.
+AgentBox mounts are limited to the manifest directory unless the operator sets `ZARIBOX_ALLOWED_MOUNT_ROOTS`. Use `Security.Network: slirp4netns` when provisioning needs internet access; keep `none` for prebuilt images. Non-interactive commands support structured `--json` output, timeouts, and output limits.
 
 ## Install
 
