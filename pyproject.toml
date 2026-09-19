@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 zaribox = "zaribox.cli:main"
+zaribox-mcp = "zaribox.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["zaribox*"]
@@ -27,7 +28,11 @@ include = ["zaribox*"]
 version = {attr = "zaribox.__version__"}
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=2.0,<3",
+]
 dev = [
+    "mcp>=2.0,<3",
     "pytest>=8.0",
     "ruff",
 ]

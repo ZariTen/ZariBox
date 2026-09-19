@@ -114,6 +114,7 @@ def _parser(*, json_errors: bool = False) -> argparse.ArgumentParser:
     subparsers.add_parser(
         "cleanup", help="remove expired agent boxes and stale operation leases"
     )
+    subparsers.add_parser("mcp", help="run the optional local MCP server over stdio")
     return parser
 
 
@@ -206,6 +207,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     service = ZariBoxService()
     command = str(args.command)
     try:
+        if command == "mcp":
+            if json_mode:
+                raise ValueError("MCP stdio transport cannot be combined with --json")
+            from .mcp_server import main as run_mcp
+
+            return run_mcp()
+
         if command == "validate":
             config = service.validate(args.config)
             data: dict[str, Any] = {

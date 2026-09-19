@@ -128,6 +128,32 @@ zaribox remove coding-agent --force --json
 
 AgentBox mounts are limited to the manifest directory unless the operator sets `ZARIBOX_ALLOWED_MOUNT_ROOTS`. Use `Security.Network: slirp4netns` when provisioning needs internet access; keep `none` for prebuilt images. Non-interactive commands support structured `--json` output, timeouts, and output limits.
 
+### MCP server
+
+Install and run the MCP 2.x stdio server:
+
+```bash
+pip install '.[mcp]'
+ZARIBOX_MCP_ROOT="$PWD" zaribox-mcp
+```
+
+Example client configuration:
+
+```json
+{
+  "mcpServers": {
+    "zaribox": {
+      "command": "zaribox-mcp",
+      "env": {
+        "ZARIBOX_MCP_ROOT": "/absolute/path/to/project"
+      }
+    }
+  }
+}
+```
+
+The server provides tools to validate, plan, create, inspect, execute in, list, and destroy AgentBoxes. Access is limited to the configured project root. You can also start it with `zaribox mcp`.
+
 ## Install
 
 **Requirements:** Python 3.10+, PyYAML, and `podman` in your `PATH`.
