@@ -33,8 +33,11 @@ Runtime:
   # For reproducible automation, replace this tag with an image digest.
   Image: python:3.12
   Workdir: /workspace
+  # Installed declaratively as container root. Entries are package names/version
+  # specifications, never package-manager options.
   Packages:
     - git
+  # Post-install commands run as the unprivileged AgentBox user.
   Run:
     - python --version
   Env:

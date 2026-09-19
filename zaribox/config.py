@@ -23,6 +23,9 @@ _KIND = "AgentBox"
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _TTL_RE = re.compile(r"^(?:\d+(?:\.\d+)?[smhdw])+$")
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Package entries become arguments to a root-run package manager. Keep them to
+# package/version syntax so a manifest cannot smuggle package-manager options.
+_PACKAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+._:@/~=-]*$")
 _TOP_LEVEL_FIELDS = {
     "ApiVersion",
     "Kind",
@@ -191,6 +194,17 @@ def _string_list(value: object, field_name: str) -> list[str]:
     return result
 
 
+def _package_list(value: object, field_name: str) -> list[str]:
+    packages = _string_list(value, field_name)
+    for index, package in enumerate(packages):
+        if not _PACKAGE_RE.fullmatch(package):
+            raise ValueError(
+                f"{field_name}[{index}] is not a safe package specification: "
+                f"{package!r}"
+            )
+    return packages
+
+
 def _string_map(value: object, field_name: str) -> dict[str, str]:
     if value is None:
         return {}
@@ -357,7 +371,7 @@ def load_config(path: Path) -> ZariConfig:
         home_mount = False
 
     extra_flags = _string(raw.get("ExtraFlags"), "ExtraFlags") or ""
-    packages = _string_list(
+    packages = _package_list(
         runtime_raw.get("Packages", raw.get("Packages")), "Runtime.Packages"
     )
     run = _string_list(runtime_raw.get("Run", raw.get("Run")), "Runtime.Run")

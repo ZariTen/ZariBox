@@ -108,6 +108,12 @@ Workspace:
 Runtime:
   Image: python:3.12
   Workdir: /workspace
+  Packages:
+    - git
+    - ripgrep
+  # Runs once after creation, as the unprivileged container user.
+  Run:
+    - python --version
 Resources:
   CPUs: 2
   Memory: 2GiB
@@ -126,7 +132,11 @@ zaribox inspect coding-agent --json
 zaribox remove coding-agent --force --json
 ```
 
-AgentBox mounts are limited to the manifest directory unless the operator sets `ZARIBOX_ALLOWED_MOUNT_ROOTS`. Use `Security.Network: slirp4netns` when provisioning needs internet access; keep `none` for prebuilt images. Non-interactive commands support structured `--json` output, timeouts, and output limits.
+AgentBox can only mount paths inside the manifest's directory. Operators can allow additional host directories with the colon-separated `ZARIBOX_ALLOWED_MOUNT_ROOTS` environment variable. This prevents an agent from mounting arbitrary host paths such as the user's home directory.
+
+`Runtime.Packages` uses the image's package manager and therefore runs as root inside the container. Package entries are validated to prevent package-manager options. `Runtime.Run` and commands executed by the agent run as an unprivileged user without sudo access.
+
+Package downloads require `Security.Network: slirp4netns`. This network remains enabled while the AgentBox is running. For stronger isolation, build the required packages into an image and use `Security.Network: none`.
 
 ### MCP server
 
@@ -171,3 +181,14 @@ pip install git+https://github.com/ZariTen/ZariBox.git
 ```
 
 `./install.sh install` puts a `zaribox` launcher in `~/.local/bin` and the code in `~/.local/lib/zaribox` (add `~/.local/bin` to your `PATH` if it isn't there). Use `--python <exe>` to pick a specific Python interpreter.
+
+## Development
+
+Enter the dev shell, install dependencies, and run the checks:
+
+```bash
+nix develop
+uv sync --extra dev
+uv run pytest -q
+uv run ruff check .
+```

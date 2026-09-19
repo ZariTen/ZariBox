@@ -90,6 +90,25 @@ def test_agent_policy_is_isolated_and_structured(monkeypatch, tmp_path: Path) ->
     assert not any("container_xauth" in value for value in create)
 
 
+def test_writable_agent_user_is_not_granted_passwordless_sudo(
+    monkeypatch, tmp_path: Path
+) -> None:
+    commands = _record_podman(monkeypatch, tmp_path)
+    policy = CreatePolicy(security_profile="agent")
+
+    PodmanBackend().create(
+        "agent", "image", str(tmp_path / "home"), policy=policy
+    )
+
+    user_setup = next(
+        command
+        for command in commands
+        if command[:5] == ["podman", "exec", "--user", "0", "agent"]
+        and "getent passwd" in command[-1]
+    )
+    assert "sudoers" not in user_setup[-1]
+
+
 def test_agent_policy_rejects_unsafe_escape_hatches(
     monkeypatch, tmp_path: Path
 ) -> None:

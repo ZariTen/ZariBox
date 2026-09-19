@@ -52,7 +52,14 @@
       "properties": {
         "Image": {"type": "string", "minLength": 1},
         "Backend": {"const": "podman"},
-        "Packages": {"type": "array", "items": {"type": "string"}},
+        "Packages": {
+          "type": "array",
+          "description": "Packages installed declaratively as root during reconciliation.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9+._:@/~=-]*$"
+          }
+        },
         "Run": {"type": "array", "items": {"type": "string"}},
         "Env": {
           "type": "object",

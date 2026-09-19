@@ -127,6 +127,36 @@ def test_rejects_incomplete_or_unsupported_manifest_identity(
         load_config(_manifest(tmp_path, header + "Image: alpine\n"))
 
 
+@pytest.mark.parametrize("package", ["--option", "git curl", "$(id)", "/tmp/pkg"])
+def test_rejects_unsafe_package_specifications(
+    tmp_path: Path, package: str
+) -> None:
+    path = _manifest(
+        tmp_path,
+        "ApiVersion: zaribox.dev/v1\n"
+        "Kind: AgentBox\n"
+        "Runtime:\n"
+        "  Image: alpine\n"
+        f"  Packages: [{package!r}]\n",
+    )
+
+    with pytest.raises(ValueError, match="safe package specification"):
+        load_config(path)
+
+
+def test_accepts_package_version_specifications(tmp_path: Path) -> None:
+    path = _manifest(
+        tmp_path,
+        "ApiVersion: zaribox.dev/v1\n"
+        "Kind: AgentBox\n"
+        "Runtime:\n"
+        "  Image: debian\n"
+        "  Packages: ['libfoo:amd64=1.2~rc1-1']\n",
+    )
+
+    assert load_config(path).packages == ["libfoo:amd64=1.2~rc1-1"]
+
+
 def test_rejects_unknown_nested_fields(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match=r"Unknown field.*Resources"):
         load_config(

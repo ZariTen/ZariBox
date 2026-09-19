@@ -164,10 +164,19 @@ class PodmanBackend:
         result = self._exec_in_container(name, f"getent passwd {uid}")
         return result.returncode == 0
 
-    def _ensure_user(self, name: str, home_dir: str) -> None:
+    def _ensure_user(
+        self, name: str, home_dir: str, *, allow_passwordless_sudo: bool = True
+    ) -> None:
         host_uid, host_gid, host_user = self._get_host_identity()
         self._start_if_needed(name)
 
+        sudo_setup = ""
+        if allow_passwordless_sudo:
+            sudo_setup = f"""
+        mkdir -p /etc/sudoers.d
+        printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\\n' {shlex.quote(host_user)} > /etc/sudoers.d/90-zaribox-user
+        chmod 0440 /etc/sudoers.d/90-zaribox-user
+            """
         script = f"""
         getent group {host_gid} >/dev/null 2>&1 ||
             groupadd -g {host_gid} {shlex.quote(host_user)} 2>/dev/null ||
@@ -175,10 +184,7 @@ class PodmanBackend:
         getent passwd {host_uid} >/dev/null 2>&1 ||
             useradd -M -d {shlex.quote(home_dir)} -u {host_uid} -g {host_gid} {shlex.quote(host_user)} 2>/dev/null ||
             adduser -H -h {shlex.quote(home_dir)} -u {host_uid} -G {shlex.quote(host_user)} -D {shlex.quote(host_user)}
-
-        mkdir -p /etc/sudoers.d
-        printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' {shlex.quote(host_user)} > /etc/sudoers.d/90-zaribox-user
-        chmod 0440 /etc/sudoers.d/90-zaribox-user
+        {sudo_setup}
         """
         result = self._exec_in_container(name, script)
         self._raise_on_failure(
@@ -343,7 +349,9 @@ class PodmanBackend:
         self._agent_cache[name] = agent_mode
         self._start_if_needed(name, agent_mode=agent_mode)
         if not (agent_mode and selected_read_only):
-            self._ensure_user(name, home_dir)
+            self._ensure_user(
+                name, home_dir, allow_passwordless_sudo=not agent_mode
+            )
 
     def exec(
         self,
@@ -407,7 +415,11 @@ class PodmanBackend:
 
         self._start_if_needed(name)
         if not self._user_exists(name, host_uid):
-            self._ensure_user(name, home_dir)
+            self._ensure_user(
+                name,
+                home_dir,
+                allow_passwordless_sudo=not self._is_agent_container(name),
+            )
 
         host_workdir = current_dir if current_dir is not None else Path.cwd()
         container_workdir = mounted_workdir(host_workdir, self._container_mounts(name))

@@ -59,12 +59,12 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          inputsFrom = [ self.packages.${pkgs.stdenv.hostPlatform.system}.default ];
-
           packages = [
-            pkgs.python3Packages.flake8
             pkgs.git
             pkgs.nixfmt
+            pkgs.python3
+            pkgs.ruff
+            pkgs.uv
           ];
 
           shellHook = ''
