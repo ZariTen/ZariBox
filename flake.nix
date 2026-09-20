@@ -62,7 +62,9 @@
           packages = [
             pkgs.git
             pkgs.nixfmt
-            pkgs.python3
+            (pkgs.python3.withPackages (pythonPackages: [
+              pythonPackages.pyyaml
+            ]))
             pkgs.ruff
             pkgs.uv
           ];
