@@ -108,14 +108,14 @@ class MCPTools:
         config = self._agent_config(manifest, manifest=True)
         return asdict(self.service.plan(config.file_path))
 
-    def ensure(
+    def create(
         self, manifest: str, *, allow_destructive: bool = False
     ) -> dict[str, object]:
         config = self._agent_config(manifest, manifest=True)
         result = self.service.ensure(config.file_path, force=allow_destructive)
         return asdict(result)
 
-    def inspect(self, target: str) -> dict[str, object]:
+    def status(self, target: str) -> dict[str, object]:
         config = self._agent_config(target, manifest=False)
         return asdict(self.service.inspect(config.file_path))
 
@@ -146,9 +146,9 @@ class MCPTools:
         )
         return asdict(result)
 
-    def destroy(self, target: str, *, confirm: bool = False) -> dict[str, object]:
+    def remove(self, target: str, *, confirm: bool = False) -> dict[str, object]:
         if not confirm:
-            raise PermissionError("destroy requires confirm=true")
+            raise PermissionError("remove requires confirm=true")
         config = self._agent_config(target, manifest=False)
         return asdict(self.service.destroy(config.file_path, force=True))
 
@@ -189,11 +189,20 @@ def create_server(tools: MCPTools | None = None) -> Any:
     server = server_class(
         "zaribox",
         title="ZariBox",
-        description="Safely manage project-scoped ZariBox AgentBox containers.",
+        description=(
+            "Create and manage isolated, project-scoped ZariBox AgentBox containers."
+        ),
         instructions=(
-            "Use validate and plan before ensure. Destructive reconciliation requires "
-            "allow_destructive=true, and destroy requires confirm=true. All paths must "
-            "remain within the configured project root."
+            "Use zaribox_validate to check a manifest and zaribox_plan to preview "
+            "changes, "
+            "then zaribox_create to create or update the AgentBox. Use zaribox_status "
+            "to inspect state and zaribox_exec for bounded, non-interactive work. "
+            "Destructive reconciliation requires allow_destructive=true. Removal "
+            "requires confirm=true and preserves the dedicated home directory. Tools "
+            "only accept versioned AgentBox manifests inside ZARIBOX_MCP_ROOT; desktop "
+            "boxes, host-home access, interactive shells, and root command execution "
+            "are intentionally unavailable. A target is either an AgentBox name or a "
+            "manifest path inside the project root."
         ),
         version=__version__,
     )
@@ -208,25 +217,51 @@ def create_server(tools: MCPTools | None = None) -> Any:
 
     @server.tool()
     def zaribox_validate(manifest: str) -> dict[str, object]:
-        """Validate an AgentBox manifest inside the configured project root."""
+        """Validate an AgentBox manifest without creating or changing anything.
+
+        `manifest` is a YAML path relative to the configured project root. This checks
+        its schema, image, mounts, resource limits, and security policy. The result
+        includes the resolved manifest path, container name, image, and security
+        profile. Use this first when a manifest may be invalid.
+        """
         return call_tool(facade.validate, manifest)
 
     @server.tool()
     def zaribox_plan(manifest: str) -> dict[str, object]:
-        """Return reconciliation actions without changing the container."""
+        """Preview every action needed to create or update an AgentBox.
+
+        `manifest` is a YAML path inside the project root. This makes no changes. The
+        result reports create, recreation, package, and post-install actions plus
+        `requires_force`, which indicates whether `zaribox_create` must be called with
+        `allow_destructive=true`.
+        """
         return call_tool(facade.plan, manifest)
 
     @server.tool()
-    def zaribox_ensure(
+    def zaribox_create(
         manifest: str, allow_destructive: bool = False
     ) -> dict[str, object]:
-        """Create or reconcile an AgentBox; destructive changes require opt-in."""
-        return call_tool(facade.ensure, manifest, allow_destructive=allow_destructive)
+        """Create a missing AgentBox or bring an existing one up to date.
+
+        `manifest` is a YAML path inside the project root. Packages and configuration
+        are reconciled with the manifest while the dedicated home directory persists.
+        Keep `allow_destructive` false unless a prior plan reports `requires_force` and
+        the package removal or container recreation is intentional. Returns the actions
+        performed and any warnings.
+        """
+        return call_tool(
+            facade.create, manifest, allow_destructive=allow_destructive
+        )
 
     @server.tool()
-    def zaribox_inspect(target: str) -> dict[str, object]:
-        """Inspect a managed AgentBox by name or manifest path."""
-        return call_tool(facade.inspect, target)
+    def zaribox_status(target: str) -> dict[str, object]:
+        """Report configuration and runtime state for a managed AgentBox.
+
+        `target` is an AgentBox name or manifest path. The result includes existence,
+        image, security profile, expiry, configuration sync, desired and applied
+        packages, and pending package installation or removal. This makes no changes.
+        """
+        return call_tool(facade.status, target)
 
     @server.tool()
     def zaribox_exec(
@@ -236,7 +271,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
         workdir: str | None = None,
         env: dict[str, str] | None = None,
     ) -> dict[str, object]:
-        """Execute a bounded argument vector as the unprivileged container user."""
+        """Run a bounded, non-interactive command as the AgentBox user.
+
+        `target` is an AgentBox name or manifest path. Pass the executable and each
+        argument separately in `argv`; shell syntax is not interpreted. `timeout`
+        defaults to 300 seconds and cannot exceed the server maximum. `workdir` is an
+        optional container path and `env` adds command environment values. Output is
+        capped at 1 MiB. Returns exit code, stdout, stderr, timeout, and truncation
+        state. Root execution and interactive sessions are intentionally unavailable.
+        """
         return call_tool(
             facade.execute,
             target,
@@ -247,13 +290,23 @@ def create_server(tools: MCPTools | None = None) -> Any:
         )
 
     @server.tool()
-    def zaribox_destroy(target: str, confirm: bool = False) -> dict[str, object]:
-        """Destroy an AgentBox when confirm is explicitly true; home is preserved."""
-        return call_tool(facade.destroy, target, confirm=confirm)
+    def zaribox_remove(target: str, confirm: bool = False) -> dict[str, object]:
+        """Remove a managed AgentBox while preserving its dedicated home directory.
+
+        `target` is an AgentBox name or manifest path. Set `confirm=true` explicitly;
+        otherwise the operation is rejected. The container and ZariBox state are
+        removed, but persistent home data remains available for a later create.
+        """
+        return call_tool(facade.remove, target, confirm=confirm)
 
     @server.tool()
     def zaribox_list() -> list[dict[str, object]]:
-        """List agent-profile boxes belonging to the configured project root."""
+        """List managed AgentBoxes belonging to the configured project root.
+
+        Returns only agent-profile boxes whose manifests are inside the allowed root.
+        Each record describes its name, manifest, image, runtime state, security
+        profile, image digest, and expiry when available. This makes no changes.
+        """
         return call_tool(facade.list_boxes)
 
     return server

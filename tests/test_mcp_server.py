@@ -148,13 +148,13 @@ def test_execute_is_unprivileged_and_bounded(tmp_path: Path) -> None:
         tools.execute("agent", ["true"], timeout=tools.max_timeout + 1)
 
 
-def test_destroy_requires_explicit_confirmation(tmp_path: Path) -> None:
+def test_remove_requires_explicit_confirmation(tmp_path: Path) -> None:
     manifest = _manifest(tmp_path)
     tools, service = _tools(tmp_path, manifest)
 
     with pytest.raises(PermissionError, match="confirm=true"):
-        tools.destroy("agent")
-    tools.destroy("agent", confirm=True)
+        tools.remove("agent")
+    tools.remove("agent", confirm=True)
     assert service.destroyed is True
 
 
@@ -201,17 +201,26 @@ def test_server_registers_expected_tools_without_starting_transport(
     assert server.name == "zaribox"
     assert server.metadata["title"] == "ZariBox"
     assert server.metadata["version"] == __version__
+    instructions = str(server.metadata["instructions"])
+    assert "zaribox_validate" in instructions
+    assert "zaribox_create" in instructions
+    assert "allow_destructive=true" in instructions
+    assert "confirm=true" in instructions
+    assert "interactive shells" in instructions
     assert server.tools == [
         "zaribox_validate",
         "zaribox_plan",
-        "zaribox_ensure",
-        "zaribox_inspect",
+        "zaribox_create",
+        "zaribox_status",
         "zaribox_exec",
-        "zaribox_destroy",
+        "zaribox_remove",
         "zaribox_list",
     ]
+    for handler in server.handlers.values():
+        assert handler.__doc__ is not None
+        assert len(handler.__doc__) > 150
     with pytest.raises(FakeToolError, match="confirm=true"):
-        server.handlers["zaribox_destroy"]("agent")
+        server.handlers["zaribox_remove"]("agent")
 
 
 def test_create_server_uses_installed_sdk_v2(tmp_path: Path) -> None:
@@ -246,10 +255,10 @@ def test_sdk_v2_client_calls_validate_in_memory(tmp_path: Path) -> None:
             assert {tool.name for tool in listed.tools} == {
                 "zaribox_validate",
                 "zaribox_plan",
-                "zaribox_ensure",
-                "zaribox_inspect",
+                "zaribox_create",
+                "zaribox_status",
                 "zaribox_exec",
-                "zaribox_destroy",
+                "zaribox_remove",
                 "zaribox_list",
             }
             assert all(
@@ -282,7 +291,7 @@ def test_sdk_v2_returns_actionable_tool_errors(tmp_path: Path) -> None:
     async def call_tool() -> None:
         async with mcp_module.Client(create_server(tools)) as client:
             result = await client.call_tool(
-                "zaribox_destroy", {"target": "agent", "confirm": False}
+                "zaribox_remove", {"target": "agent", "confirm": False}
             )
             assert result.is_error is True
             assert "confirm=true" in result.content[0].text
