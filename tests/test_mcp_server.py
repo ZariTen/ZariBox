@@ -170,11 +170,13 @@ def test_server_registers_expected_tools_without_starting_transport(
             self.metadata = metadata
             self.tools: list[str] = []
             self.handlers: dict[str, Any] = {}
+            self.tool_metadata: dict[str, dict[str, Any]] = {}
 
-        def tool(self) -> Any:
+        def tool(self, **metadata: Any) -> Any:
             def register(function: Any) -> Any:
                 self.tools.append(function.__name__)
                 self.handlers[function.__name__] = function
+                self.tool_metadata[function.__name__] = metadata
                 return function
 
             return register
@@ -188,11 +190,20 @@ def test_server_registers_expected_tools_without_starting_transport(
     class FakeExceptionsModule:
         ToolError = FakeToolError
 
+    class FakeToolAnnotations:
+        def __init__(self, **hints: object) -> None:
+            self.hints = hints
+
+    class FakeTypesModule:
+        ToolAnnotations = FakeToolAnnotations
+
     def fake_import(name: str) -> object:
         if name == "mcp.server":
             return FakeServerModule
         if name == "mcp.server.mcpserver.exceptions":
             return FakeExceptionsModule
+        if name == "mcp.types":
+            return FakeTypesModule
         raise ModuleNotFoundError(name)
 
     monkeypatch.setattr("zaribox.mcp_server.import_module", fake_import)
@@ -216,9 +227,25 @@ def test_server_registers_expected_tools_without_starting_transport(
         "zaribox_remove",
         "zaribox_list",
     ]
-    for handler in server.handlers.values():
+    for name, handler in server.handlers.items():
         assert handler.__doc__ is not None
         assert len(handler.__doc__) > 150
+        assert server.tool_metadata[name]["title"]
+        assert isinstance(
+            server.tool_metadata[name]["annotations"], FakeToolAnnotations
+        )
+    assert server.tool_metadata["zaribox_status"]["annotations"].hints == {
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+    assert server.tool_metadata["zaribox_exec"]["annotations"].hints == {
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
     with pytest.raises(FakeToolError, match="confirm=true"):
         server.handlers["zaribox_remove"]("agent")
 
@@ -261,9 +288,28 @@ def test_sdk_v2_client_calls_validate_in_memory(tmp_path: Path) -> None:
                 "zaribox_remove",
                 "zaribox_list",
             }
+            assert [tool.name for tool in listed.tools] == [
+                "zaribox_validate",
+                "zaribox_plan",
+                "zaribox_create",
+                "zaribox_status",
+                "zaribox_exec",
+                "zaribox_remove",
+                "zaribox_list",
+            ]
+            assert all(tool.title for tool in listed.tools)
             assert all(
                 tool.input_schema.get("type") == "object" for tool in listed.tools
             )
+            assert all(tool.output_schema is not None for tool in listed.tools)
+            annotations = {tool.name: tool.annotations for tool in listed.tools}
+            assert annotations["zaribox_status"].read_only_hint is True
+            assert annotations["zaribox_status"].destructive_hint is False
+            assert annotations["zaribox_create"].idempotent_hint is True
+            assert annotations["zaribox_create"].open_world_hint is True
+            assert annotations["zaribox_remove"].destructive_hint is True
+            assert annotations["zaribox_exec"].idempotent_hint is False
+            assert annotations["zaribox_exec"].open_world_hint is True
             exec_tool = next(
                 tool for tool in listed.tools if tool.name == "zaribox_exec"
             )

@@ -180,9 +180,10 @@ def create_server(tools: MCPTools | None = None) -> Any:
 
     try:
         tool_error_class = import_module("mcp.server.mcpserver.exceptions").ToolError
+        tool_annotations_class = import_module("mcp.types").ToolAnnotations
     except (AttributeError, ModuleNotFoundError) as exc:
         raise RuntimeError(
-            "The installed MCP package does not provide the SDK v2 ToolError API."
+            "The installed MCP package does not provide the required SDK v2 APIs."
         ) from exc
 
     facade = tools or MCPTools()
@@ -215,7 +216,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
         except _EXPECTED_TOOL_ERRORS as exc:
             raise tool_error_class(str(exc)) from exc
 
-    @server.tool()
+    @server.tool(
+        title="Validate AgentBox Manifest",
+        annotations=tool_annotations_class(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     def zaribox_validate(manifest: str) -> dict[str, object]:
         """Validate an AgentBox manifest without creating or changing anything.
 
@@ -226,7 +235,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
         """
         return call_tool(facade.validate, manifest)
 
-    @server.tool()
+    @server.tool(
+        title="Plan AgentBox Changes",
+        annotations=tool_annotations_class(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     def zaribox_plan(manifest: str) -> dict[str, object]:
         """Preview every action needed to create or update an AgentBox.
 
@@ -237,7 +254,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
         """
         return call_tool(facade.plan, manifest)
 
-    @server.tool()
+    @server.tool(
+        title="Create or Update AgentBox",
+        annotations=tool_annotations_class(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+    )
     def zaribox_create(
         manifest: str, allow_destructive: bool = False
     ) -> dict[str, object]:
@@ -253,7 +278,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
             facade.create, manifest, allow_destructive=allow_destructive
         )
 
-    @server.tool()
+    @server.tool(
+        title="Inspect AgentBox Status",
+        annotations=tool_annotations_class(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     def zaribox_status(target: str) -> dict[str, object]:
         """Report configuration and runtime state for a managed AgentBox.
 
@@ -263,7 +296,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
         """
         return call_tool(facade.status, target)
 
-    @server.tool()
+    @server.tool(
+        title="Execute Command in AgentBox",
+        annotations=tool_annotations_class(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )
     def zaribox_exec(
         target: str,
         argv: list[str],
@@ -289,7 +330,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
             env=env,
         )
 
-    @server.tool()
+    @server.tool(
+        title="Remove AgentBox",
+        annotations=tool_annotations_class(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     def zaribox_remove(target: str, confirm: bool = False) -> dict[str, object]:
         """Remove a managed AgentBox while preserving its dedicated home directory.
 
@@ -299,7 +348,15 @@ def create_server(tools: MCPTools | None = None) -> Any:
         """
         return call_tool(facade.remove, target, confirm=confirm)
 
-    @server.tool()
+    @server.tool(
+        title="List Project AgentBoxes",
+        annotations=tool_annotations_class(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     def zaribox_list() -> list[dict[str, object]]:
         """List managed AgentBoxes belonging to the configured project root.
 
