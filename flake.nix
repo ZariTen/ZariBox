@@ -12,68 +12,85 @@
       ];
 
       forAllSystems =
-        f: nixpkgs.lib.genAttrs supportedSystems (system: f nixpkgs.legacyPackages.${system});
+        function:
+        nixpkgs.lib.genAttrs supportedSystems (
+          system: function nixpkgs.legacyPackages.${system}
+        );
 
       version = "0.2.8.1";
     in
     {
       formatter = forAllSystems (pkgs: pkgs.nixfmt);
 
-      packages = forAllSystems (pkgs: {
-        default = pkgs.python3Packages.buildPythonApplication {
-          pname = "zaribox";
-          inherit version;
+      packages = forAllSystems (
+        pkgs:
+        let
+          zaribox = pkgs.python3Packages.buildPythonApplication {
+            pname = "zaribox";
+            inherit version;
 
-          src = pkgs.fetchFromGitHub {
-            owner = "ZariTen";
-            repo = "zaribox";
-            rev = "v${version}";
-            hash = "sha256-2IENH7soBf45JScLcM92k5lKAtMOb7eVVMwATvnvAAE=";
+            src = self;
+            pyproject = true;
+
+            build-system = [
+              pkgs.python3Packages.setuptools
+            ];
+
+            dependencies = [
+              pkgs.python3Packages.pyyaml
+            ];
+
+            nativeCheckInputs = [
+              pkgs.python3Packages.pytestCheckHook
+            ];
+
+            pythonImportsCheck = [
+              "zaribox"
+            ];
+
+            meta = {
+              description = "Declarative Podman manager";
+              homepage = "https://github.com/ZariTen/zaribox";
+              license = pkgs.lib.licenses.gpl3Only;
+              mainProgram = "zaribox";
+              platforms = pkgs.lib.platforms.linux;
+            };
           };
-
-          format = "pyproject";
-
-          nativeBuildInputs = with pkgs.python3Packages; [
-            setuptools
-          ];
-
-          propagatedBuildInputs = with pkgs.python3Packages; [
-            pyyaml
-          ];
-
-          nativeCheckInputs = with pkgs.python3Packages; [
-            pytestCheckHook
-          ];
-
-          meta = {
-            description = "Declarative container manager";
-            homepage = "https://github.com/ZariTen/zaribox";
-            mainProgram = "zaribox";
-          };
-        };
-      });
+        in
+        {
+          inherit zaribox;
+          default = zaribox;
+        }
+      );
 
       checks = forAllSystems (pkgs: {
-        zaribox = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) zaribox;
       });
 
-      devShells = forAllSystems (pkgs: {
-        default = pkgs.mkShell {
-          packages = [
-            pkgs.git
-            pkgs.nixfmt
-            (pkgs.python3.withPackages (pythonPackages: [
-              pythonPackages.pyyaml
-            ]))
-            pkgs.ruff
-            pkgs.uv
-          ];
+      devShells = forAllSystems (
+        pkgs:
+        let
+          python = pkgs.python3.withPackages (pythonPackages: [
+            pythonPackages.pytest
+            pythonPackages.pyyaml
+          ]);
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              pkgs.git
+              pkgs.nixfmt
+              python
+              pkgs.ruff
+              pkgs.uv
+            ];
 
-          shellHook = ''
-            echo "ZariBox dev shell"
-            echo "Python $(python --version)"
-          '';
-        };
-      });
+            shellHook = ''
+              echo "ZariBox dev shell"
+              echo "Python $(python --version)"
+            '';
+          };
+        }
+      );
     };
 }
