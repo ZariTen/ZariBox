@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from zaribox import __version__
-from zaribox.config import _normalize_list, _resolve_image, load_config, resolve_backend
+from zaribox.config import _normalize_list, _resolve_image, load_config
 from zaribox.models import ZariConfig
 from zaribox.state import StateStore, container_identity_hash, package_drift
 
@@ -77,29 +77,17 @@ def test_load_config_missing_image_raises(tmp_path: Path) -> None:
         load_config(p)
 
 
-# config.resolve_backend
+def test_load_config_rejects_backend_selection(tmp_path: Path) -> None:
+    path = tmp_path / "devbox.yaml"
+    path.write_text("Image: archlinux\nBackend: podman\n")
+    with pytest.raises(ValueError, match=r"Unknown field.*Backend"):
+        load_config(path)
 
 
-def _dummy_config(backend=None) -> ZariConfig:
+def _dummy_config() -> ZariConfig:
     return ZariConfig(
-        file_path=Path("x.yaml"), name="box", image="archlinux:latest", backend=backend
+        file_path=Path("x.yaml"), name="box", image="archlinux:latest"
     )
-
-
-def test_resolve_backend_defaults_to_podman(monkeypatch) -> None:
-    monkeypatch.delenv("ZARIBOX_BACKEND", raising=False)
-    assert resolve_backend(None) == "podman"
-
-
-def test_resolve_backend_uses_configured_podman(monkeypatch) -> None:
-    monkeypatch.delenv("ZARIBOX_BACKEND", raising=False)
-    assert resolve_backend(_dummy_config("podman")) == "podman"
-
-
-def test_resolve_backend_invalid_raises(monkeypatch) -> None:
-    monkeypatch.setenv("ZARIBOX_BACKEND", "docker")
-    with pytest.raises(ValueError, match="Unsupported backend"):
-        resolve_backend(None)
 
 
 # state.container_identity_hash

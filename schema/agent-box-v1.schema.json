@@ -51,7 +51,6 @@
       "required": ["Image"],
       "properties": {
         "Image": {"type": "string", "minLength": 1},
-        "Backend": {"const": "podman"},
         "Packages": {
           "type": "array",
           "description": "Packages installed declaratively as root during reconciliation.",

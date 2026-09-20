@@ -109,7 +109,7 @@ def container_identity_hash(config: ZariConfig) -> str:
     payload = {
         "name": config.name,
         "image": _normalize_image(config.image),
-        "backend": config.backend or "podman",
+        "backend": "podman",
         "home_dir": config.home_dir or "",
         "home_mount": config.home_mount,
         "extra_flags": config.extra_flags,

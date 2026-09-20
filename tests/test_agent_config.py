@@ -33,7 +33,6 @@ Workspace:
       Options: [nodev]
 Runtime:
   Image: python:3.12
-  Backend: podman
   Packages: [git]
   Run: [python --version]
   Env:

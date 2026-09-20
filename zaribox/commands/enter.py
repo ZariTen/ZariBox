@@ -8,7 +8,7 @@ def run_enter(container_name: str) -> int:
     context = load_container_context(container_name)
     if context is None:
         return 1
-    if not require_runtime(context.backend_name, context.backend):
+    if not require_runtime(context.backend):
         return 1
 
     name = context.config.name

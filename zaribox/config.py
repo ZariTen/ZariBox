@@ -7,7 +7,7 @@ from typing import cast
 
 import yaml
 
-from .backends import PodmanBackend, make_backend
+from .backends import PodmanBackend
 from .models import (
     Metadata,
     Mount,
@@ -37,7 +37,6 @@ _TOP_LEVEL_FIELDS = {
     # Legacy flat fields remain valid in unversioned and versioned manifests.
     "Name",
     "Image",
-    "Backend",
     "HomeDir",
     "HomeMount",
     "ExtraFlags",
@@ -48,12 +47,10 @@ _TOP_LEVEL_FIELDS = {
 
 def load_context(
     yaml_arg: str | Path | None,
-) -> tuple[Path, ZariConfig, str, PodmanBackend]:
+) -> tuple[Path, ZariConfig, PodmanBackend]:
     yaml_path = resolve_yaml(yaml_arg)
     config = load_config(yaml_path)
-    backend_name = resolve_backend(config)
-    backend = make_backend(backend_name)
-    return yaml_path, config, backend_name, backend
+    return yaml_path, config, PodmanBackend()
 
 
 def _resolve_image(image: str) -> str:
@@ -303,7 +300,6 @@ def load_config(path: Path) -> ZariConfig:
         legacy_fields = {
             "Name",
             "Image",
-            "Backend",
             "HomeDir",
             "HomeMount",
             "ExtraFlags",
@@ -334,7 +330,7 @@ def load_config(path: Path) -> ZariConfig:
     _reject_unknown(workspace_raw, {"HomeDir", "HomeMount", "Mounts"}, "Workspace")
     _reject_unknown(
         runtime_raw,
-        {"Image", "Backend", "Packages", "Run", "Env", "Workdir"},
+        {"Image", "Packages", "Run", "Env", "Workdir"},
         "Runtime",
     )
     _reject_unknown(resources_raw, {"CPUs", "Memory", "PidsLimit"}, "Resources")
@@ -356,7 +352,6 @@ def load_config(path: Path) -> ZariConfig:
     assert image is not None
     image = _resolve_image(image)
 
-    backend = _string(runtime_raw.get("Backend", raw.get("Backend")), "Runtime.Backend")
 
     home_dir_value = workspace_raw.get("HomeDir", raw.get("HomeDir"))
     home_dir = _string(home_dir_value, "Workspace.HomeDir")
@@ -387,7 +382,6 @@ def load_config(path: Path) -> ZariConfig:
     )
     runtime = Runtime(
         image=image,
-        backend=backend,
         packages=packages,
         run=run,
         env=env,
@@ -470,7 +464,6 @@ def load_config(path: Path) -> ZariConfig:
         file_path=path,
         name=name,
         image=image,
-        backend=backend,
         home_dir=home_dir,
         home_mount=home_mount,
         extra_flags=extra_flags,
@@ -484,15 +477,3 @@ def load_config(path: Path) -> ZariConfig:
         resources=resources,
         security=security,
     )
-
-
-def resolve_backend(config: ZariConfig | None) -> str:
-    selected = os.environ.get("ZARIBOX_BACKEND", "").strip()
-    if not selected and config is not None and config.backend:
-        selected = config.backend.strip()
-    if not selected:
-        selected = "podman"
-
-    if selected not in {"podman"}:
-        raise ValueError(f"Unsupported backend: '{selected}'. Supported: podman")
-    return selected

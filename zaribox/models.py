@@ -30,7 +30,6 @@ class Workspace:
 @dataclass(slots=True)
 class Runtime:
     image: str = ""
-    backend: str | None = None
     packages: list[str] = field(default_factory=list[str])
     run: list[str] = field(default_factory=list[str])
     env: dict[str, str] = field(default_factory=dict[str, str])
@@ -66,7 +65,6 @@ class ZariConfig:
     file_path: Path
     name: str
     image: str
-    backend: str | None = None
     home_dir: str | None = None
     extra_flags: str = ""
     packages: list[str] = field(default_factory=list[str])
