@@ -17,7 +17,7 @@
           system: function nixpkgs.legacyPackages.${system}
         );
 
-      version = "0.2.8.1";
+      version = "0.3.0";
     in
     {
       formatter = forAllSystems (pkgs: pkgs.nixfmt);
