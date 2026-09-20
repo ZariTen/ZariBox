@@ -5,7 +5,7 @@
 # Try:
 #   zaribox validate examples/agentbox.yaml --json
 #   zaribox plan examples/agentbox.yaml --json
-#   zaribox ensure examples/agentbox.yaml --json
+#   zaribox create examples/agentbox.yaml --json
 #   zaribox exec example-agent --json -- python --version
 #   zaribox remove example-agent --force --json
 
