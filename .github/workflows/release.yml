@@ -1,102 +1,82 @@
-name: Release on Version Change
+name: Release
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
     paths:
-      - "zaribox/__init__.py"
+      - zaribox/__init__.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
+    name: Create GitHub release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository and tags
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Extract current version
-        id: current_version
+      - name: Prepare release
+        id: release
+        shell: bash
         run: |
-          VERSION=$(python -c "import zaribox; print(zaribox.__version__)")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Current version: $VERSION"
+          set -euo pipefail
 
-      - name: Extract previous version from git tag
-        id: previous_version
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            echo "previous_version=" >> $GITHUB_OUTPUT
-            echo "No previous tags found"
+          version=$(python -c "import zaribox; print(zaribox.__version__)")
+          previous_tag=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || true)
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse --verify --quiet "refs/tags/v${version}" >/dev/null; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Tag v${version} already exists; skipping release."
           else
-            PREV_VERSION=${PREV_TAG#v}
-            echo "previous_version=$PREV_VERSION" >> $GITHUB_OUTPUT
-            echo "Previous version: $PREV_VERSION"
-          fi
-
-      - name: Check if version has changed
-        id: version_check
-        run: |
-          CURRENT="${{ steps.current_version.outputs.version }}"
-          PREVIOUS="${{ steps.previous_version.outputs.previous_version }}"
-
-          # Guard against releasing a tag that already exists
-          if git rev-parse "v${CURRENT}" >/dev/null 2>&1; then
-            echo "Tag v${CURRENT} already exists — skipping release"
-            echo "version_changed=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          if [ "$CURRENT" != "$PREVIOUS" ]; then
-            echo "version_changed=true" >> $GITHUB_OUTPUT
-            echo "Version has changed from $PREVIOUS to $CURRENT"
-          else
-            echo "version_changed=false" >> $GITHUB_OUTPUT
-            echo "Version has not changed"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Preparing v${version} (previous tag: ${previous_tag:-none})."
           fi
 
       - name: Generate release notes
-        if: steps.version_check.outputs.version_changed == 'true'
-        id: release_notes
+        if: steps.release.outputs.publish == 'true'
+        env:
+          CURRENT_VERSION: ${{ steps.release.outputs.version }}
+          PREVIOUS_TAG: ${{ steps.release.outputs.previous_tag }}
+        shell: bash
         run: |
-          PREV_TAG="${{ steps.previous_version.outputs.previous_version }}"
-          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+          set -euo pipefail
 
-          if [ -z "$PREV_TAG" ]; then
-            RANGE_ARGS=""
-          else
-            RANGE_ARGS="v${PREV_TAG}..HEAD"
+          range=()
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            range=("${PREVIOUS_TAG}..HEAD")
           fi
 
-          # Returns commits matching a conventional commit prefix pattern
           get_commits() {
-            local pattern="$1"
-            if [ -z "$RANGE_ARGS" ]; then
-              git log --pretty=format:"- %h: %s" -E --grep="$pattern" 2>/dev/null || true
-            else
-              git log "$RANGE_ARGS" --pretty=format:"- %h: %s" -E --grep="$pattern" 2>/dev/null || true
-            fi
+            git log "${range[@]}" --pretty=format:"- %h: %s" -E --grep="$1" || true
           }
 
-          # Append a grouped section to the changelog file
           append_section() {
             local title="$1"
             local content="$2"
-            if [ -n "$content" ]; then
-              printf "### %s\n%s\n\n" "$title" "$content" >> /tmp/changelog.txt
+            if [[ -n "$content" ]]; then
+              printf "### %s\n%s\n\n" "$title" "$content" >> /tmp/release-notes.md
             fi
           }
 
-          > /tmp/changelog.txt
-
+          : > /tmp/release-notes.md
           append_section "Features"      "$(get_commits '^feat(\([^)]*\))?!?:')"
           append_section "Bug Fixes"     "$(get_commits '^fix(\([^)]*\))?!?:')"
           append_section "Refactoring"   "$(get_commits '^refactor(\([^)]*\))?!?:')"
@@ -105,26 +85,16 @@ jobs:
           append_section "Chores"        "$(get_commits '^chore(\([^)]*\))?!?:')"
           append_section "Other"         "$(get_commits '^(style|test|ci|build|revert)(\([^)]*\))?!?:')"
 
-          # Fallback if no conventional commits were found
-          if [ ! -s /tmp/changelog.txt ]; then
-            echo "- Version bump to ${CURRENT_VERSION}" > /tmp/changelog.txt
+          if [[ ! -s /tmp/release-notes.md ]]; then
+            echo "- Version bump to ${CURRENT_VERSION}" > /tmp/release-notes.md
           fi
 
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/changelog.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        if: steps.version_check.outputs.version_changed == 'true'
+      - name: Create GitHub release
+        if: steps.release.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.current_version.outputs.version }}
-          name: v${{ steps.current_version.outputs.version }}
-          body: |
-            ## Changes
-
-            ${{ steps.release_notes.outputs.changelog }}
+          tag_name: v${{ steps.release.outputs.version }}
+          name: v${{ steps.release.outputs.version }}
+          body_path: /tmp/release-notes.md
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
