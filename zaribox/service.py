@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 from collections.abc import Sequence
@@ -8,14 +9,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .backends import PodmanBackend, make_backend
+from .backends import PodmanBackend
 from .backends.podman import CreatePolicy, MountSpec
-from .config import load_config, resolve_backend, resolve_yaml
+from .config import load_config, resolve_yaml
 from .models import ZariConfig
-from .pkgmgr import detect_pkgmgr, install_cmd, remove_cmd
+from .pkgmgr import detect_pkgmgr, install_cmd, list_cmd, remove_cmd
 from .project_state import (
     ProjectRecord,
     ProjectStateStore,
+    atomic_write,
     cleanup_expired_sessions,
 )
 from .shell import CommandResult
@@ -111,6 +113,40 @@ def _default_home(name: str) -> str:
     return str(base / "zaribox" / "home" / name)
 
 
+def _fetch_installed_packages(
+    backend: PodmanBackend, name: str, image: str
+) -> list[str]:
+    manager = detect_pkgmgr(image)
+    result = backend.exec(
+        name, list_cmd(manager), as_user=False, capture_output=True
+    )
+    return [line.split()[0] for line in result.stdout.splitlines() if line.strip()]
+
+
+def _merge_packages_into_config(
+    yaml_path: Path, config: ZariConfig, packages: list[str]
+) -> list[str]:
+    existing = set(config.packages)
+    added = sorted(set(packages) - existing)
+    if not added:
+        return []
+
+    merged = sorted(existing | set(packages))
+    block = "Packages:\n" + "".join(f"  - {package}\n" for package in merged)
+    text = yaml_path.read_text(encoding="utf-8")
+    if re.search(r"^Packages:", text, re.MULTILINE):
+        text = re.sub(
+            r"^Packages:.*?(?=^\S|\Z)",
+            block,
+            text,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+    else:
+        text = text.rstrip("\n") + "\n" + block
+    atomic_write(yaml_path, text)
+    return added
+
+
 class ZariBoxService:
     """Programmatic, non-interactive orchestration boundary for CLI and agents."""
 
@@ -120,7 +156,6 @@ class ZariBoxService:
     def validate(self, yaml_arg: str | Path | None) -> ZariConfig:
         path = resolve_yaml(yaml_arg)
         config = load_config(path)
-        resolve_backend(config)
         self._validate_policy(config)
         self._validate_agent_home(config)
         self._mount_specs(config)
@@ -179,8 +214,8 @@ class ZariBoxService:
             "Security.Profile must be one of: agent, restricted, desktop, default"
         )
 
-    def _backend_for(self, config: ZariConfig) -> PodmanBackend:
-        return self._backend or make_backend(resolve_backend(config))
+    def _backend_for(self, _config: ZariConfig) -> PodmanBackend:
+        return self._backend or PodmanBackend()
 
     def _resolve_config_for_name(self, name: str) -> Path:
         legacy = StateStore(name).yaml_path_for(name)
@@ -229,7 +264,7 @@ class ZariBoxService:
                     project_id=store.project_id,
                     config_path=str(config.file_path.resolve()),
                     container_name=config.name,
-                    backend=resolve_backend(config),
+                    backend="podman",
                     applied_identity_digest=legacy_hash,
                     applied_packages=legacy.saved_packages(config.name),
                     image=config.image,
@@ -569,7 +604,7 @@ class ZariBoxService:
                     project_id=store.project_id,
                     config_path=str(config.file_path.resolve()),
                     container_name=config.name,
-                    backend=resolve_backend(config),
+                    backend=backend.name,
                     applied_identity_digest=container_identity_hash(config),
                     applied_packages=applied,
                     image=config.image,
@@ -635,7 +670,7 @@ class ZariBoxService:
         backend = self._backend_for(config)
         if not backend.container_exists(config.name):
             raise RuntimeError(
-                f"Container '{config.name}' does not exist; run ensure first"
+                f"Container '{config.name}' does not exist; run create first"
             )
         store = ProjectStateStore(config.file_path)
         self._assert_owned(backend, config, store)
@@ -665,7 +700,7 @@ class ZariBoxService:
         self, target: str | Path, *, force: bool = False, lock_timeout: float = 30.0
     ) -> OperationResult:
         if not force:
-            raise PermissionError("Destroy requires explicit confirmation/force")
+            raise PermissionError("Remove requires explicit confirmation/force")
         config = self.config_for_target(target)
         backend = self._backend_for(config)
         store = ProjectStateStore(config.file_path)
@@ -695,8 +730,6 @@ class ZariBoxService:
         )
 
     def export_packages(self, target: str | Path) -> list[str]:
-        from .commands.export import _fetch_installed_packages, _merge_into_config
-
         config = self.config_for_target(target)
         backend = self._backend_for(config)
         if not backend.container_exists(config.name):
@@ -705,7 +738,7 @@ class ZariBoxService:
         self._assert_owned(backend, config, store)
         with store.lock():
             packages = _fetch_installed_packages(backend, config.name, config.image)
-            added = _merge_into_config(config.file_path, config, packages)
+            added = _merge_packages_into_config(config.file_path, config, packages)
             if added:
                 record = store.load()
                 if record is not None:
@@ -729,9 +762,7 @@ class ZariBoxService:
                 if not isinstance(raw, dict) or raw.get("schema_version") != 1:
                     continue
                 name = str(raw["container_name"])
-                backend = self._backend or make_backend(
-                    str(raw.get("backend", "podman"))
-                )
+                backend = self._backend or PodmanBackend()
                 exists = backend.container_exists(name)
                 results.append(
                     {
@@ -773,9 +804,7 @@ class ZariBoxService:
 
                 name = str(raw.get("container_name", ""))
                 project = str(raw.get("project_id", ""))
-                backend = self._backend or make_backend(
-                    str(raw.get("backend", "podman"))
-                )
+                backend = self._backend or PodmanBackend()
                 store = ProjectStateStore(config_path)
                 with store.lock(timeout=0.1):
                     if backend.container_exists(name):

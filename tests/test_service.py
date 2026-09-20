@@ -177,6 +177,37 @@ def test_json_option_after_exec_delimiter_is_preserved() -> None:
     ]
 
 
+def test_public_cli_has_one_name_per_operation() -> None:
+    from zaribox.cli import _parser
+
+    help_text = _parser().format_help()
+    assert "usage: zaribox [OPTIONS] COMMAND ..." in help_text
+    for command in (
+        "validate",
+        "plan",
+        "create",
+        "status",
+        "exec",
+        "enter",
+        "export",
+        "list",
+        "remove",
+        "cleanup",
+    ):
+        assert f"\n    {command}" in help_text
+    for retired in ("ensure", "apply", "inspect", "destroy", "mcp"):
+        assert f"\n    {retired} " not in help_text
+
+
+@pytest.mark.parametrize("retired", ["ensure", "apply", "inspect", "destroy", "mcp"])
+def test_retired_commands_are_rejected(retired: str) -> None:
+    from zaribox.cli import _parser
+
+    with pytest.raises(SystemExit):
+        _parser().parse_args([retired])
+
+
+
 def test_agent_profile_cannot_downgrade_to_desktop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

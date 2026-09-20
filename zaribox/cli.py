@@ -31,90 +31,206 @@ class _ArgumentParser(argparse.ArgumentParser):
 def _parser(*, json_errors: bool = False) -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog="zaribox",
-        description="Declarative Podman environments",
+        usage="%(prog)s [OPTIONS] COMMAND ...",
+        description="Create and manage reproducible Podman development containers.",
+        epilog="""common workflows:
+  zaribox create archbox.yaml     Create or update a box
+  zaribox enter archbox           Open an interactive shell
+  zaribox status archbox          Check its current state
+  zaribox exec archbox -- git status
+
+A TARGET can be a container name or its manifest path.
+Run 'zaribox COMMAND --help' for full command details.""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         json_errors=json_errors,
     )
     parser.add_argument(
         "--version", action="version", version=f"ZariBox v{__version__}"
     )
     parser.add_argument(
-        "--json", action="store_true", help="emit one machine-readable JSON document"
+        "--json", action="store_true", help="print one machine-readable JSON document"
     )
     parser.add_argument(
-        "--no-color", action="store_true", help="disable ANSI color output"
+        "--no-color", action="store_true", help="disable colored output"
     )
-    subparsers = parser.add_subparsers(dest="command")
-
-    validate = subparsers.add_parser(
-        "validate", help="validate and normalize a manifest"
+    subparsers = parser.add_subparsers(
+        dest="command",
+        title="commands",
+        metavar="COMMAND",
     )
-    validate.add_argument("config", nargs="?")
 
-    plan = subparsers.add_parser(
-        "plan", help="show reconciliation actions without changing anything"
+    def command(
+        name: str, summary: str, description: str, example: str
+    ) -> argparse.ArgumentParser:
+        return subparsers.add_parser(
+            name,
+            help=summary,
+            description=description,
+            epilog=f"example:\n  {example}",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+
+    validate = command(
+        "validate",
+        "Check a manifest without changing anything",
+        "Parse a manifest and verify its fields, backend, mounts, and security "
+        "policy.\n"
+        "Reports the resolved name, image, kind, and security profile.",
+        "zaribox validate archbox.yaml",
     )
-    plan.add_argument("target", nargs="?")
-
-    ensure = subparsers.add_parser("ensure", help="create or reconcile a container")
-    ensure.add_argument("config", nargs="?")
-    ensure.add_argument(
-        "--force", action="store_true", help="allow destructive reconciliation"
+    validate.add_argument(
+        "config",
+        nargs="?",
+        metavar="MANIFEST",
+        help="YAML manifest; auto-detected in the current directory when omitted",
     )
-    ensure.add_argument("--lock-timeout", type=float, default=30.0)
 
-    create = subparsers.add_parser("create", help="create or recreate from a manifest")
-    create.add_argument("config", nargs="?")
+    plan = command(
+        "plan",
+        "Preview what create would change",
+        "Compare the requested configuration with the managed container and list "
+        "every\n"
+        "planned action. Reports whether destructive work requires --force.",
+        "zaribox plan archbox",
+    )
+    plan.add_argument(
+        "target",
+        nargs="?",
+        metavar="TARGET",
+        help="container name or manifest; auto-detected when omitted",
+    )
+
+    create = command(
+        "create",
+        "Create a box or bring it up to date",
+        "Create a missing container or reconcile an existing one with its manifest.\n"
+        "The dedicated home directory survives updates and explicit recreation.",
+        "zaribox create archbox.yaml",
+    )
+    create.add_argument(
+        "target",
+        nargs="?",
+        metavar="TARGET",
+        help="container name or manifest; auto-detected when omitted",
+    )
     create.add_argument(
         "--force",
         action="store_true",
-        help="accepted for consistency; create already recreates",
+        help="allow package removal or other destructive changes",
+    )
+    create.add_argument(
+        "--recreate",
+        action="store_true",
+        help="rebuild the container even when already in sync",
+    )
+    create.add_argument(
+        "--lock-timeout",
+        type=float,
+        default=30.0,
+        metavar="SECONDS",
+        help="maximum time to wait for another operation (default: 30)",
     )
 
-    apply_parser = subparsers.add_parser("apply", help="reconcile a managed container")
-    apply_parser.add_argument("target")
-    apply_parser.add_argument("--force", action="store_true")
-
-    inspect_parser = subparsers.add_parser(
-        "inspect", help="return structured container state"
+    status = command(
+        "status",
+        "Show configuration and runtime state",
+        "Report whether the container exists and whether its image, security policy,\n"
+        "configuration, and package snapshot match the manifest.",
+        "zaribox status archbox",
     )
-    inspect_parser.add_argument("target")
-    status = subparsers.add_parser("status", help="alias for inspect")
-    status.add_argument("target")
+    status.add_argument("target", metavar="TARGET", help="container name or manifest")
 
-    execute = subparsers.add_parser(
-        "exec", help="execute a bounded non-interactive command"
+    execute = command(
+        "exec",
+        "Run a non-interactive command inside a box",
+        "Execute a bounded command in a managed container and capture its exit code,\n"
+        "stdout, and stderr. Place -- before the command and its arguments.",
+        "zaribox exec archbox -- git status",
     )
-    execute.add_argument("target")
-    execute.add_argument("--timeout", type=float, default=300.0)
-    execute.add_argument("--max-output-bytes", type=int, default=1_048_576)
-    execute.add_argument("--workdir")
-    execute.add_argument("--env", action="append", default=[], metavar="KEY=VALUE")
-    execute.add_argument("--root", action="store_true")
-    execute.add_argument("--shell", help="explicitly run a shell command")
-    execute.add_argument("argv", nargs="*")
-
-    enter = subparsers.add_parser("enter", help="open an interactive shell")
-    enter.add_argument("target")
-
-    export = subparsers.add_parser(
-        "export", help="merge manually installed packages into the manifest"
+    execute.add_argument("target", metavar="TARGET", help="container name or manifest")
+    execute.add_argument(
+        "--timeout",
+        type=float,
+        default=300.0,
+        metavar="SECONDS",
+        help="terminate the command after this duration (default: 300)",
     )
-    export.add_argument("target")
-
-    subparsers.add_parser("list", help="list managed containers")
-
-    remove = subparsers.add_parser(
-        "remove", aliases=["destroy"], help="destroy a container, preserving its home"
+    execute.add_argument(
+        "--max-output-bytes",
+        type=int,
+        default=1_048_576,
+        metavar="BYTES",
+        help="truncate captured output beyond this size (default: 1048576)",
     )
-    remove.add_argument("target")
+    execute.add_argument(
+        "--workdir", metavar="PATH", help="working directory inside the container"
+    )
+    execute.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="set an environment value; may be repeated",
+    )
+    execute.add_argument(
+        "--root",
+        action="store_true",
+        help="run as root instead of the container user",
+    )
+    execute.add_argument(
+        "--shell", metavar="COMMAND", help="run an explicit command through sh -lc"
+    )
+    execute.add_argument(
+        "argv", nargs="*", metavar="COMMAND", help="command and arguments after --"
+    )
+
+    enter = command(
+        "enter",
+        "Open an interactive shell inside a box",
+        "Start the container when needed and attach an interactive shell as the\n"
+        "container user. Disabled for restricted AgentBoxes; use exec instead.",
+        "zaribox enter archbox",
+    )
+    enter.add_argument("target", metavar="NAME", help="managed desktop container name")
+
+    export = command(
+        "export",
+        "Save manually installed packages to the manifest",
+        "Read the distribution's explicitly installed packages and atomically add new\n"
+        "entries to the manifest. Dependency-only packages are ignored.",
+        "zaribox export archbox",
+    )
+    export.add_argument("target", metavar="TARGET", help="container name or manifest")
+
+    command(
+        "list",
+        "List managed boxes and their runtime state",
+        "List containers recorded in ZariBox project state, including whether each\n"
+        "container exists and is currently running.",
+        "zaribox list",
+    )
+
+    remove = command(
+        "remove",
+        "Remove a box while preserving its home",
+        "Stop and remove a managed container and clear its ZariBox state. The "
+        "dedicated\n"
+        "home directory is not deleted, so it can be reused by a later create.",
+        "zaribox remove archbox",
+    )
+    remove.add_argument("target", metavar="TARGET", help="container name or manifest")
     remove.add_argument(
-        "--force", action="store_true", help="skip interactive confirmation"
+        "--force", action="store_true", help="skip the interactive confirmation prompt"
     )
 
-    subparsers.add_parser(
-        "cleanup", help="remove expired agent boxes and stale operation leases"
+    command(
+        "cleanup",
+        "Remove expired AgentBoxes and stale leases",
+        "Remove AgentBoxes whose TTL has expired and clear abandoned operation "
+        "leases.\n"
+        "Active boxes and persistent home directories are preserved.",
+        "zaribox cleanup",
     )
-    subparsers.add_parser("mcp", help="run the optional local MCP server over stdio")
     return parser
 
 
@@ -207,12 +323,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     service = ZariBoxService()
     command = str(args.command)
     try:
-        if command == "mcp":
-            if json_mode:
-                raise ValueError("MCP stdio transport cannot be combined with --json")
-            from .mcp_server import main as run_mcp
-
-            return run_mcp()
 
         if command == "validate":
             config = service.validate(args.config)
@@ -232,24 +342,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_data(command, asdict(result), json_mode)
             return 0
 
-        if command in {"ensure", "create"}:
-            recreate = command == "create"
+        if command == "create":
+            target = args.target
+            config_path: str | Path | None = target
+            if target is not None and not Path(target).expanduser().is_file():
+                config_path = service.config_for_target(target).file_path
             result = service.ensure(
-                args.config,
-                force=bool(args.force) or recreate,
-                recreate=recreate,
-                lock_timeout=getattr(args, "lock_timeout", 30.0),
+                config_path,
+                force=bool(args.force) or bool(args.recreate),
+                recreate=bool(args.recreate),
+                lock_timeout=args.lock_timeout,
             )
             _print_data(command, asdict(result), json_mode)
             return 0
 
-        if command == "apply":
-            config = service.config_for_target(args.target)
-            result = service.ensure(config.file_path, force=args.force)
-            _print_data(command, asdict(result), json_mode)
-            return 0
-
-        if command in {"inspect", "status"}:
+        if command == "status":
             result = service.inspect(args.target)
             _print_data(command, asdict(result), json_mode)
             return 0
@@ -291,10 +398,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_data(command, boxes, json_mode)
             return 0
 
-        if command in {"remove", "destroy"}:
+        if command == "remove":
             confirmed = args.force
             if json_mode and not confirmed:
-                raise PermissionError("JSON destroy requires --force")
+                raise PermissionError("JSON remove requires --force")
             if not confirmed:
                 confirmed = _confirm_destroy(args.target)
             if not confirmed:
