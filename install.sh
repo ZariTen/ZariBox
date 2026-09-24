@@ -2,74 +2,54 @@
 set -euo pipefail
 
 usage() {
-	cat <<'EOF'
+	cat <<'USAGE'
 Usage:
-	./install.sh install [--python <exe>]
-	./install.sh uninstall
-Options:
-	--python <exe>   Python executable to use for launcher (default: python3)
-Examples:
 	./install.sh install
-	./install.sh install --python python3
-  ./install.sh uninstall
-EOF
+	./install.sh uninstall
+Builds the release binaries with cargo when available, otherwise with
+`nix build`, and installs zaribox and zaribox-mcp into ~/.local/bin.
+USAGE
 }
 
 target_bin_dir() {
 	echo "$HOME/.local/bin"
 }
 
-target_lib_dir() {
-	echo "$HOME/.local/lib/zaribox"
+build_binaries() {
+	if command -v cargo >/dev/null 2>&1; then
+		cargo build --locked --release
+		built_dir="$root_dir/target/release"
+	elif command -v nix >/dev/null 2>&1; then
+		nix build "$root_dir#zaribox" --out-link "$root_dir/result"
+		built_dir="$root_dir/result/bin"
+	else
+		echo "Neither cargo nor nix was found; cannot build zaribox." >&2
+		exit 1
+	fi
 }
 
 install_program() {
-	local lib_dir
-	lib_dir="$(target_lib_dir)"
-
-	if [[ ! -d "$root_dir/zaribox" ]]; then
-		echo "Source directory not found: $root_dir/zaribox" >&2
-		exit 1
-	fi
-
-	rm -rf "$lib_dir"
-	mkdir -p "$lib_dir"
-	cp -a "$root_dir/zaribox/." "$lib_dir/"
-	echo "Installed program files to $lib_dir"
-}
-
-install_launcher() {
-	local bin_dir launcher lib_dir
+	local bin_dir name
 	bin_dir="$(target_bin_dir)"
-	launcher="$bin_dir/zaribox"
-	lib_dir="$(target_lib_dir)"
-
 	mkdir -p "$bin_dir"
-	cat >"$launcher" <<-EOF
-		#!/usr/bin/env bash
-		set -euo pipefail
-		exec "$python_exe" "$lib_dir/__main__.py" "\$@"
-	EOF
-	chmod +x "$launcher"
-	echo "Installed launcher at $launcher"
-}
-
-remove_launcher() {
-	local launcher
-	launcher="$(target_bin_dir)/zaribox"
-	if [[ -f "$launcher" ]]; then
-		rm -f "$launcher"
-		echo "Removed launcher at $launcher"
-	fi
+	for name in zaribox zaribox-mcp; do
+		install -m 0755 "$built_dir/$name" "$bin_dir/$name"
+		echo "Installed $bin_dir/$name"
+	done
+	# Clean up files left by the former Python installer.
+	rm -rf "$HOME/.local/lib/zaribox"
 }
 
 remove_program() {
-	local lib_dir
-	lib_dir="$(target_lib_dir)"
-	if [[ -d "$lib_dir" ]]; then
-		rm -rf "$lib_dir"
-		echo "Removed program files at $lib_dir"
-	fi
+	local bin_dir name
+	bin_dir="$(target_bin_dir)"
+	for name in zaribox zaribox-mcp; do
+		if [[ -f "$bin_dir/$name" ]]; then
+			rm -f "$bin_dir/$name"
+			echo "Removed $bin_dir/$name"
+		fi
+	done
+	rm -rf "$HOME/.local/lib/zaribox"
 }
 
 if [[ $# -lt 1 ]]; then
@@ -80,23 +60,8 @@ fi
 action="$1"
 shift
 
-python_exe="python3"
-
-while [[ $# -gt 0 ]]; do
+if [[ $# -gt 0 ]]; then
 	case "$1" in
-		--python)
-			if [[ "$action" == "uninstall" ]]; then
-				echo "Warning: --python is ignored for uninstall" >&2
-				shift 2
-				continue
-			fi
-			if [[ $# -lt 2 ]]; then
-				echo "Missing value for --python" >&2
-				exit 1
-			fi
-			python_exe="$2"
-			shift 2
-			;;
 		-h|--help)
 			usage
 			exit 0
@@ -107,28 +72,26 @@ while [[ $# -gt 0 ]]; do
 			exit 1
 			;;
 	esac
-done
+fi
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$root_dir"
 
 case "$action" in
 	install)
-		if ! command -v "$python_exe" >/dev/null 2>&1; then
-			echo "Python executable not found: $python_exe" >&2
-			exit 1
-		fi
+		build_binaries
 		install_program
-		install_launcher
 		echo "Installed. Ensure ~/.local/bin is in PATH."
 		if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 			echo "Warning: $HOME/.local/bin is not in your PATH. Add it to your shell profile to use zaribox."
 		fi
 		;;
 	uninstall)
-		remove_launcher
 		remove_program
 		echo "Uninstalled zaribox."
+		;;
+	-h|--help)
+		usage
 		;;
 	*)
 		echo "Unknown action: $action" >&2
