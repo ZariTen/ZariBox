@@ -24,6 +24,18 @@ from .shell import CommandResult
 from .state import StateStore, container_identity_hash, package_drift
 
 
+def _check_project_owner(
+    backend: PodmanBackend, name: str, project_id: str, unmanaged_message: str
+) -> str | None:
+    """Raise unless the container is ZariBox-managed and not owned by another project."""
+    if backend.label(name, "io.zaribox.managed") != "true":
+        raise PermissionError(unmanaged_message)
+    owner = backend.label(name, "io.zaribox.project-id")
+    if owner is not None and owner != project_id:
+        raise PermissionError(f"Container '{name}' belongs to another ZariBox project")
+    return owner
+
+
 @dataclass(frozen=True, slots=True)
 class PlanAction:
     kind: str
@@ -471,15 +483,12 @@ class ZariBoxService:
     def _assert_owned(
         self, backend: PodmanBackend, config: ZariConfig, store: ProjectStateStore
     ) -> None:
-        if backend.label(config.name, "io.zaribox.managed") != "true":
-            raise PermissionError(
-                f"Container '{config.name}' is not managed by ZariBox"
-            )
-        owner = backend.label(config.name, "io.zaribox.project-id")
-        if owner is not None and owner != store.project_id:
-            raise PermissionError(
-                f"Container '{config.name}' belongs to another ZariBox project"
-            )
+        owner = _check_project_owner(
+            backend,
+            config.name,
+            store.project_id,
+            f"Container '{config.name}' is not managed by ZariBox",
+        )
         if owner is None and self._profile(config) == "agent":
             raise PermissionError(
                 f"Agent container '{config.name}' has no project ownership label; recreate it"
@@ -548,15 +557,12 @@ class ZariBoxService:
                 needs_create = "create" in kinds or "recreate" in kinds
                 if needs_create:
                     if backend.container_exists(config.name):
-                        if backend.label(config.name, "io.zaribox.managed") != "true":
-                            raise PermissionError(
-                                f"Refusing to replace unmanaged container '{config.name}'"
-                            )
-                        owner = backend.label(config.name, "io.zaribox.project-id")
-                        if owner is not None and owner != store.project_id:
-                            raise PermissionError(
-                                f"Container '{config.name}' belongs to another ZariBox project"
-                            )
+                        _check_project_owner(
+                            backend,
+                            config.name,
+                            store.project_id,
+                            f"Refusing to replace unmanaged container '{config.name}'",
+                        )
                         backup = f"{config.name}.backup-{operation_id[:8]}"
                         backup_was_running = backend.is_running(config.name)
                         try:
@@ -708,15 +714,12 @@ class ZariBoxService:
         changed = False
         with store.lock(timeout=lock_timeout):
             if backend.container_exists(config.name):
-                if backend.label(config.name, "io.zaribox.managed") != "true":
-                    raise PermissionError(
-                        f"Refusing to destroy unmanaged container '{config.name}'"
-                    )
-                owner = backend.label(config.name, "io.zaribox.project-id")
-                if owner is not None and owner != store.project_id:
-                    raise PermissionError(
-                        f"Container '{config.name}' belongs to another ZariBox project"
-                    )
+                _check_project_owner(
+                    backend,
+                    config.name,
+                    store.project_id,
+                    f"Refusing to destroy unmanaged container '{config.name}'",
+                )
                 try:
                     backend.stop(config.name)
                 except RuntimeError:

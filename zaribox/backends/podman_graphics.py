@@ -5,10 +5,12 @@ import shutil
 from pathlib import Path
 
 from ..state import StateStore
+from .podman_args import volume_args
 from .podman_mounts import mount_options
 
 X11_SOCKET_DIR = Path("/tmp/.X11-unix")
 RUNTIME_DIR_ROOT = Path("/run/user")
+_HOST_DEVICES = ("/dev/dri", "/dev/kfd")
 
 
 def _runtime_directory() -> Path | None:
@@ -77,20 +79,24 @@ def xauthority_path(name: str) -> Path:
     return StateStore(name).cache_dir / "xauth"
 
 
-def persist_xauthority(name: str) -> Path | None:
-    source = host_xauthority()
-    if source is None:
-        return None
-
-    target = xauthority_path(name)
+def _copy_xauthority(source: Path, target: Path, action: str) -> None:
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         _ = shutil.copyfile(source, target)
         _ = target.chmod(0o600)
     except OSError as exc:
         raise RuntimeError(
-            f"Failed to persist Xauthority file from '{source}'"
+            f"Failed to {action} Xauthority file from '{source}'"
         ) from exc
+
+
+def persist_xauthority(name: str) -> Path | None:
+    source = host_xauthority()
+    if source is None:
+        return None
+
+    target = xauthority_path(name)
+    _copy_xauthority(source, target, "persist")
     return target
 
 
@@ -103,13 +109,7 @@ def refresh_xauthority(name: str) -> None:
     if source is None or source.resolve() == target.resolve():
         return
 
-    try:
-        _ = shutil.copyfile(source, target)
-        _ = target.chmod(0o600)
-    except OSError as exc:
-        raise RuntimeError(
-            f"Failed to refresh Xauthority file from '{source}'"
-        ) from exc
+    _copy_xauthority(source, target, "refresh")
 
 
 def current_graphics_env() -> list[str]:
@@ -147,33 +147,15 @@ def add_create_args(args: list[str], name: str) -> None:
 
     if display:
         if X11_SOCKET_DIR.is_dir():
-            args.extend(
-                [
-                    "--volume",
-                    f"{X11_SOCKET_DIR}:{X11_SOCKET_DIR}:{mnt_ro_rslave}",
-                ]
-            )
+            args.extend(volume_args(X11_SOCKET_DIR, X11_SOCKET_DIR, mnt_ro_rslave))
         xauth = persist_xauthority(name)
         if xauth is not None:
-            args.extend(
-                [
-                    "--env",
-                    "XAUTHORITY=/tmp/.container_xauth",
-                    "--volume",
-                    f"{xauth}:/tmp/.container_xauth:{mnt_ro}",
-                ]
-            )
+            args.extend(["--env", "XAUTHORITY=/tmp/.container_xauth"])
+            args.extend(volume_args(xauth, "/tmp/.container_xauth", mnt_ro))
 
     if runtime_dir is not None:
-        runtime_path = str(runtime_dir)
-        args.extend(
-            [
-                "--env",
-                f"XDG_RUNTIME_DIR={runtime_path}",
-                "--volume",
-                f"{runtime_path}:{runtime_path}:{mnt_rw_rslave}",
-            ]
-        )
+        args.extend(["--env", f"XDG_RUNTIME_DIR={runtime_dir}"])
+        args.extend(volume_args(runtime_dir, runtime_dir, mnt_rw_rslave))
         bus_path = runtime_dir / "bus"
         if bus_path.is_socket():
             args.extend(["--env", f"DBUS_SESSION_BUS_ADDRESS=unix:path={bus_path}"])
@@ -187,15 +169,14 @@ def add_create_args(args: list[str], name: str) -> None:
 
         pulse_dir = runtime_dir / "pulse"
         if pulse_dir.is_dir():
-            args.extend(["--volume", f"{pulse_dir}:{pulse_dir}:{mnt_rw_rslave}"])
+            args.extend(volume_args(pulse_dir, pulse_dir, mnt_rw_rslave))
             if os.environ.get("PULSE_SERVER"):
                 args.extend(["--env", f"PULSE_SERVER={os.environ['PULSE_SERVER']}"])
             elif (pulse_dir / "native").is_socket():
                 args.extend(["--env", f"PULSE_SERVER=unix:{pulse_dir}/native"])
 
-    if Path("/dev/dri").exists():
-        args.extend(["--device", "/dev/dri"])
-    if Path("/dev/kfd").exists():
-        args.extend(["--device", "/dev/kfd"])
+    for device in _HOST_DEVICES:
+        if Path(device).exists():
+            args.extend(["--device", device])
     if Path("/etc/localtime").exists():
-        args.extend(["--volume", "/etc/localtime:/etc/localtime:ro"])
+        args.extend(volume_args("/etc/localtime", "/etc/localtime", "ro"))

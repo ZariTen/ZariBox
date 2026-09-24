@@ -7,17 +7,47 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ..shell import CommandResult, command_exists, run_command
+from .podman_args import user_exec_args
 from .podman_create import (
     CreatePolicy,
     MountSpec,
     build_create_command,
     resolve_create_policy,
 )
+from .podman_exec import build_exec_args, login_shell_command
 from .podman_graphics import current_graphics_env, refresh_xauthority
 from .podman_mounts import mount_options, mounted_workdir, parse_mounts
 from .podman_users import machine_id_setup_script, user_setup_script
 
 __all__ = ["CreatePolicy", "MountSpec", "PodmanBackend"]
+
+_CREATE_MAX_OUTPUT_BYTES = 1_048_576
+
+
+def _raise_on_failure(result: CommandResult, context: str) -> None:
+    if result.returncode != 0:
+        stderr_text = result.stderr.strip()
+        message = f"{context} failed"
+        if stderr_text:
+            message = f"{message}\n{stderr_text}"
+        raise RuntimeError(message)
+
+
+def _run(
+    args: Sequence[str],
+    *,
+    capture_output: bool = True,
+    timeout: float | None = None,
+    max_output_bytes: int | None = None,
+) -> CommandResult:
+    # Only forward limits that are set; test doubles of run_command accept a
+    # narrower signature than the real one.
+    limits: dict[str, float | int] = {}
+    if timeout is not None:
+        limits["timeout"] = timeout
+    if max_output_bytes is not None:
+        limits["max_output_bytes"] = max_output_bytes
+    return run_command(args, capture_output=capture_output, **limits)  # type: ignore[arg-type]
 
 
 class PodmanBackend:
@@ -41,79 +71,49 @@ class PodmanBackend:
             self._host_identity = (uid, os.getgid(), user)
         return self._host_identity
 
-    def _raise_on_failure(self, result: CommandResult, context: str) -> None:
-        if result.returncode != 0:
-            stderr_text = result.stderr.strip()
-            message = f"{context} failed"
-            if stderr_text:
-                message = f"{message}\n{stderr_text}"
-            raise RuntimeError(message)
-
-    def _mount_opts(self, opts: str) -> str:
-        return mount_options(opts)
+    def _host_home(self, default: str) -> str:
+        return os.environ.get("HOME", default).rstrip("/")
 
     def _is_rootless(self) -> bool:
         return self._get_host_identity()[0] != 0
 
+    def _podman(self, *args: str) -> CommandResult:
+        result = run_command(["podman", *args], capture_output=True)
+        _raise_on_failure(result, f"podman {args[0]}")
+        return result
+
+    def _inspect(self, name: str, fmt: str) -> str | None:
+        result = run_command(
+            ["podman", "inspect", "--format", fmt, name], capture_output=True
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
     def _container_home(self, name: str) -> str:
         if name not in self._home_cache:
-            result = run_command(
-                [
-                    "podman",
-                    "inspect",
-                    "--format",
-                    '{{ index .Config.Labels "io.zaribox.home" }}',
-                    name,
-                ],
-                capture_output=True,
-            )
-            self._home_cache[name] = (
-                result.stdout.strip() if result.returncode == 0 else ""
-            )
+            self._home_cache[name] = self.label(name, "io.zaribox.home") or ""
         return self._home_cache[name]
 
     def _container_mounts(self, name: str) -> list[tuple[Path, Path]]:
         """Return host-to-container paths for mounts on a container."""
-        result = run_command(
-            [
-                "podman",
-                "inspect",
-                "--format",
-                "{{range .Mounts}}{{.Source}}\t{{.Destination}}\n{{end}}",
-                name,
-            ],
-            capture_output=True,
+        output = self._inspect(
+            name, "{{range .Mounts}}{{.Source}}\t{{.Destination}}\n{{end}}"
         )
-        if result.returncode != 0:
-            return []
-        return parse_mounts(result.stdout)
-
-    def _current_graphics_env(self) -> list[str]:
-        return current_graphics_env()
+        return parse_mounts(output) if output else []
 
     def _is_agent_container(self, name: str) -> bool:
         if name not in self._agent_cache:
-            result = run_command(
-                [
-                    "podman",
-                    "inspect",
-                    "--format",
-                    '{{ index .Config.Labels "io.zaribox.security-profile" }}',
-                    name,
-                ],
-                capture_output=True,
-            )
             self._agent_cache[name] = (
-                result.returncode == 0 and result.stdout.strip() == "agent"
+                self.label(name, "io.zaribox.security-profile") == "agent"
             )
         return self._agent_cache[name]
 
+    def _resolve_agent(self, name: str, agent_mode: bool | None) -> bool:
+        return self._is_agent_container(name) if agent_mode is None else agent_mode
+
     def _start_if_needed(self, name: str, *, agent_mode: bool | None = None) -> None:
-        is_agent = self._is_agent_container(name) if agent_mode is None else agent_mode
-        if not is_agent:
+        if not self._resolve_agent(name, agent_mode):
             refresh_xauthority(name)
-        result = run_command(["podman", "start", name], capture_output=True)
-        self._raise_on_failure(result, "podman start")
+        self._podman("start", name)
         self._ensure_machine_id(name)
 
     def _exec_in_container(self, name: str, cmd: str) -> CommandResult:
@@ -124,11 +124,10 @@ class PodmanBackend:
 
     def _ensure_machine_id(self, name: str) -> None:
         result = self._exec_in_container(name, machine_id_setup_script())
-        self._raise_on_failure(result, f"Failed to initialize machine ID in '{name}'")
+        _raise_on_failure(result, f"Failed to initialize machine ID in '{name}'")
 
     def _user_exists(self, name: str, uid: int) -> bool:
-        result = self._exec_in_container(name, f"getent passwd {uid}")
-        return result.returncode == 0
+        return self._exec_in_container(name, f"getent passwd {uid}").returncode == 0
 
     def _ensure_user(
         self, name: str, home_dir: str, *, allow_passwordless_sudo: bool = True
@@ -144,15 +143,14 @@ class PodmanBackend:
             allow_passwordless_sudo=allow_passwordless_sudo,
         )
         result = self._exec_in_container(name, script)
-        self._raise_on_failure(
+        _raise_on_failure(
             result, f"Failed to initialize user inside container '{name}'"
         )
 
     def container_exists(self, name: str) -> bool:
-        if not self.runtime_present():
-            return False
         return (
-            run_command(
+            self.runtime_present()
+            and run_command(
                 ["podman", "container", "exists", name], capture_output=True
             ).returncode
             == 0
@@ -196,19 +194,20 @@ class PodmanBackend:
             image=image,
             home_dir=home_dir,
             host_user=host_user,
-            host_actual_home=os.environ.get("HOME", f"/home/{host_user}").rstrip("/"),
+            host_actual_home=self._host_home(f"/home/{host_user}"),
             home_mount=home_mount,
             rootless=self._is_rootless(),
             extra_flags=extra_flags,
             policy=selected,
-            mount_options=self._mount_opts,
+            mount_options=mount_options,
         )
-        create_options: dict[str, object] = {"capture_output": True}
-        if selected.command_timeout is not None:
-            create_options["timeout"] = selected.command_timeout
-            create_options["max_output_bytes"] = 1_048_576
-        create_result = run_command(args, **create_options)  # type: ignore[arg-type]
-        self._raise_on_failure(create_result, "podman create")
+        timeout = selected.command_timeout
+        create_result = _run(
+            args,
+            timeout=timeout,
+            max_output_bytes=_CREATE_MAX_OUTPUT_BYTES if timeout is not None else None,
+        )
+        _raise_on_failure(create_result, "podman create")
 
         self._agent_cache[name] = selected.agent_mode
         self._start_if_needed(name, agent_mode=selected.agent_mode)
@@ -231,45 +230,33 @@ class PodmanBackend:
         workdir: str | None = None,
         env: Mapping[str, str] | None = None,
     ) -> CommandResult:
-        is_agent = self._is_agent_container(name) if agent_mode is None else agent_mode
+        is_agent = self._resolve_agent(name, agent_mode)
         self._start_if_needed(name, agent_mode=is_agent)
-        args = ["podman", "exec"]
 
         if as_user:
             host_uid, host_gid, host_user = self._get_host_identity()
-            home_dir = self._container_home(name)
-            args.extend(
-                [
-                    "--user",
-                    f"{host_uid}:{host_gid}",
-                    "--env",
-                    f"USER={host_user}",
-                    "--env",
-                    f"LOGNAME={host_user}",
-                    "--env",
-                    f"HOME={home_dir}",
-                ]
+            user_args = user_exec_args(
+                host_uid, host_gid, host_user, self._container_home(name)
             )
         else:
-            args.extend(["--user", "0"])
+            user_args = ["--user", "0"]
 
-        if workdir:
-            if not workdir.startswith("/"):
-                raise ValueError("Container workdir must be an absolute path")
-            args.extend(["--workdir", workdir])
-        for key, value in (env or {}).items():
-            args.extend(["--env", f"{key}={value}"])
-
-        graphics_env = [] if is_agent else self._current_graphics_env()
-        args.extend([*graphics_env, name, *command])
-        run_options: dict[str, object] = {"capture_output": capture_output}
-        if timeout is not None:
-            run_options["timeout"] = timeout
-        if max_output_bytes is not None:
-            run_options["max_output_bytes"] = max_output_bytes
-        result = run_command(args, **run_options)  # type: ignore[arg-type]
-        if check and result.returncode != 0:
-            self._raise_on_failure(result, "podman exec")
+        args = build_exec_args(
+            name,
+            command,
+            user_args=user_args,
+            workdir=workdir,
+            env=env,
+            graphics_env=[] if is_agent else current_graphics_env(),
+        )
+        result = _run(
+            args,
+            capture_output=capture_output,
+            timeout=timeout,
+            max_output_bytes=max_output_bytes,
+        )
+        if check:
+            _raise_on_failure(result, "podman exec")
         return result
 
     def enter(self, name: str, current_dir: Path | None = None) -> int:
@@ -286,44 +273,21 @@ class PodmanBackend:
             )
 
         host_workdir = current_dir if current_dir is not None else Path.cwd()
-        container_workdir = mounted_workdir(host_workdir, self._container_mounts(name))
-        shell_cmd = (
-            f"if command -v {shlex.quote(preferred_shell)} >/dev/null 2>&1; then exec {shlex.quote(preferred_shell)} -l; "
-            f"elif command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi"
+        exec_args = build_exec_args(
+            name,
+            ["sh", "-lc", login_shell_command(preferred_shell)],
+            user_args=user_exec_args(host_uid, host_gid, host_user, home_dir),
+            workdir=mounted_workdir(host_workdir, self._container_mounts(name)),
+            graphics_env=current_graphics_env(),
+            interactive=True,
         )
-        exec_args = [
-            "podman",
-            "exec",
-            "-it",
-            "--user",
-            f"{host_uid}:{host_gid}",
-            "--env",
-            f"USER={host_user}",
-            "--env",
-            f"LOGNAME={host_user}",
-            "--env",
-            f"HOME={home_dir}",
-        ]
-        if container_workdir is not None:
-            exec_args.extend(["--workdir", container_workdir])
-        exec_args.extend(
-            [
-                *self._current_graphics_env(),
-                name,
-                "sh",
-                "-lc",
-                shell_cmd,
-            ]
-        )
-        result = subprocess.run(exec_args, check=False)
-        return result.returncode
+        return subprocess.run(exec_args, check=False).returncode
 
     def post_install(self, name: str, home_dir: str) -> None:
         host_uid, host_gid, _ = self._get_host_identity()
-        host_actual_home = os.environ.get("HOME", "").rstrip("/")
         target_home = home_dir.rstrip("/")
 
-        if target_home == host_actual_home or target_home == "" or self._is_rootless():
+        if target_home in ("", self._host_home("")) or self._is_rootless():
             return
 
         _ = self._exec_in_container(
@@ -334,63 +298,26 @@ class PodmanBackend:
         self._start_if_needed(name)
 
     def stop(self, name: str) -> None:
-        self._raise_on_failure(
-            run_command(["podman", "stop", name], capture_output=True), "podman stop"
-        )
+        self._podman("stop", name)
 
     def rm(self, name: str) -> None:
-        self._raise_on_failure(
-            run_command(["podman", "rm", "-f", name], capture_output=True), "podman rm"
-        )
+        self._podman("rm", "-f", name)
 
     def rename(self, name: str, new_name: str) -> None:
-        self._raise_on_failure(
-            run_command(["podman", "rename", name, new_name], capture_output=True),
-            "podman rename",
-        )
+        self._podman("rename", name, new_name)
         if name in self._home_cache:
             self._home_cache[new_name] = self._home_cache.pop(name)
         if name in self._agent_cache:
             self._agent_cache[new_name] = self._agent_cache.pop(name)
 
     def label(self, name: str, key: str) -> str | None:
-        result = run_command(
-            [
-                "podman",
-                "inspect",
-                "--format",
-                f'{{{{ index .Config.Labels "{key}" }}}}',
-                name,
-            ],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            return None
-        value = result.stdout.strip()
-        return value or None
+        return self._inspect(name, f'{{{{ index .Config.Labels "{key}" }}}}') or None
 
     def image_digest(self, name: str) -> str | None:
-        result = run_command(
-            [
-                "podman",
-                "inspect",
-                "--format",
-                "{{.ImageDigest}}",
-                name,
-            ],
-            capture_output=True,
-        )
-        if result.returncode != 0:
-            return None
-        value = result.stdout.strip()
-        return value or None
+        return self._inspect(name, "{{.ImageDigest}}") or None
 
     def is_running(self, name: str) -> bool:
-        result = run_command(
-            ["podman", "inspect", "--format", "{{.State.Running}}", name],
-            capture_output=True,
-        )
-        return result.returncode == 0 and result.stdout.strip().lower() == "true"
+        return (self._inspect(name, "{{.State.Running}}") or "").lower() == "true"
 
     def detect_package_manager(self, name: str) -> str:
         from ..pkgmgr import probe_cmd
@@ -401,11 +328,5 @@ class PodmanBackend:
             raise RuntimeError(f"No supported package manager found in '{name}'")
         return manager
 
-    def detect_pkgmgr(self, name: str) -> str:
-        """Backward-friendly short alias for container package-manager probing."""
-        return self.detect_package_manager(name)
-
     def ps(self) -> str:
-        result = run_command(["podman", "ps", "-a"], capture_output=True)
-        self._raise_on_failure(result, "podman ps")
-        return result.stdout
+        return self._podman("ps", "-a").stdout

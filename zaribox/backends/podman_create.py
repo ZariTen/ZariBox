@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .podman_args import env_args, identity_env_args, volume_args
 from .podman_graphics import add_create_args
 
 
@@ -152,16 +153,10 @@ def build_create_command(
         policy.network,
         "--ipc",
         "private" if agent_mode else "host",
-        "--env",
-        f"HOME={home_dir}",
-        "--env",
-        f"USER={host_user}",
-        "--env",
-        f"LOGNAME={host_user}",
+        *identity_env_args(host_user, home_dir),
         "--workdir",
         policy.workdir or home_dir,
-        "--volume",
-        f"{home_dir}:{home_dir}:{mount_options('rslave')}",
+        *volume_args(home_dir, home_dir, mount_options("rslave")),
     ]
 
     if agent_mode:
@@ -176,13 +171,9 @@ def build_create_command(
         args.extend([_RESOURCE_FLAGS[key], str(value)])
     for mount in policy.mounts:
         args.extend(
-            [
-                "--volume",
-                f"{mount.source}:{mount.target}:{mount_options(mount.options)}",
-            ]
+            volume_args(mount.source, mount.target, mount_options(mount.options))
         )
-    for key, value in policy.env.items():
-        args.extend(["--env", f"{key}={value}"])
+    args.extend(env_args(policy.env))
     for key, value in policy.labels.items():
         if key in _RESERVED_LABELS:
             raise ValueError(f"Reserved container label: {key}")
@@ -190,10 +181,7 @@ def build_create_command(
 
     if home_mount and host_actual_home != home_dir:
         args.extend(
-            [
-                "--volume",
-                f"{host_actual_home}:{host_actual_home}:{mount_options('rw')}",
-            ]
+            volume_args(host_actual_home, host_actual_home, mount_options("rw"))
         )
     if rootless:
         args.extend(["--userns", "keep-id"])
