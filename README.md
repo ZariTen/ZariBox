@@ -156,13 +156,14 @@ Package downloads require `Security.Network: slirp4netns`. This network remains 
 
 ### MCP server for agentic workflows
 
-The optional MCP 2.x stdio server lets an MCP-capable agent manage AgentBoxes through structured tools instead of constructing shell commands. It is deliberately scoped to AgentBoxes under one project root and does not expose interactive shells, desktop boxes, host-home access, or root command execution.
+The bundled MCP stdio server (`zaribox-mcp`) lets an MCP-capable agent manage AgentBoxes through structured tools instead of constructing shell commands. It is deliberately scoped to AgentBoxes under one project root and does not expose interactive shells, desktop boxes, host-home access, or root command execution.
 
-Install and run it from a source checkout:
+It is installed alongside `zaribox`:
 
 ```bash
-pip install '.[mcp]'
 ZARIBOX_MCP_ROOT="$PWD" zaribox-mcp
+# or, without installing
+ZARIBOX_MCP_ROOT="$PWD" nix run github:ZariTen/ZariBox#zaribox-mcp
 ```
 
 Example client configuration:
@@ -196,21 +197,21 @@ Each tool includes agent-readable descriptions of its parameters, result, limits
 
 ## Install
 
-**Requirements:** Python 3.10+, PyYAML, and `podman` in your `PATH`.
+**Requirements:** `podman` in your `PATH`. ZariBox is a self-contained Rust binary; building it needs Rust 1.88+ (or Nix).
 
 ```bash
 # Nix
-nix run github:ZariTen/ZariBox
+nix run github:ZariTen/ZariBox -- --help
 
-# pip
-pip install git+https://github.com/ZariTen/ZariBox.git
+# cargo
+cargo install --git https://github.com/ZariTen/ZariBox.git
 
-# local (no packaging tools needed)
+# local checkout (uses cargo, falls back to nix build)
 ./install.sh install
 ./install.sh uninstall
 ```
 
-`./install.sh install` puts a `zaribox` launcher in `~/.local/bin` and the code in `~/.local/lib/zaribox` (add `~/.local/bin` to your `PATH` if it isn't there). Use `--python <exe>` to pick a specific Python interpreter.
+`./install.sh install` builds the release binaries and installs `zaribox` and `zaribox-mcp` into `~/.local/bin` (add it to your `PATH` if it isn't there).
 
 ## Development
 
@@ -218,7 +219,8 @@ Enter the dev shell, install dependencies, and run the checks:
 
 ```bash
 nix develop
-uv sync --extra dev
-uv run pytest -q
-uv run ruff check .
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+nix run . -- --help
 ```

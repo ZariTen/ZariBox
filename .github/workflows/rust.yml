@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - Cargo.toml
+      - Cargo.lock
+      - flake.nix
+      - flake.lock
+      - .github/workflows/rust.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - Cargo.toml
+      - Cargo.lock
+      - flake.nix
+      - flake.lock
+      - .github/workflows/rust.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Format, lint, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Check formatting
+        run: nix develop -c cargo fmt --check
+
+      - name: Clippy
+        run: nix develop -c cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: nix develop -c cargo test --locked
+
+      - name: Build flake
+        run: nix build .#zaribox && ./result/bin/zaribox --version
