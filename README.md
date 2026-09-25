@@ -51,7 +51,7 @@ ZariBox uses Podman as its container runtime. Podman must be installed and avail
 
 ## Commands
 
-`MANIFEST` is a YAML file. `TARGET` can be either a managed container name or its manifest path. When an optional manifest is omitted, ZariBox looks for YAML files in the current directory. Commands that support `--json` emit one machine-readable response, making the same CLI suitable for scripts and agent orchestration.
+`MANIFEST` is a YAML file. `TARGET` can be either a managed container name or its manifest path. When an optional manifest is omitted, ZariBox looks for YAML files in the current directory. Commands print a short human summary. Pass `--json` for one machine-readable document (the same data the MCP tools return) so scripts and agents can consume the CLI too.
 
 | Command | Description |
 | --- | --- |

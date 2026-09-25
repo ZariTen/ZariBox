@@ -13,6 +13,7 @@ use crate::engine::{
     Backend, CreatePolicy, CreateRequest, ExecOptions, LABEL_MANAGED, LABEL_PROJECT, MountSpec,
     PodmanBackend,
 };
+use crate::logging;
 use crate::paths;
 use crate::pkgmgr::{self, PackageManager};
 use crate::state::{self, ProjectRecord, ProjectStore};
@@ -549,13 +550,14 @@ impl Service {
             max_output: Some(PROVISION_OUTPUT_LIMIT),
             ..ExecOptions::default()
         };
-        for (script, packages) in [
-            (pkgmgr::install_script(manager), install),
-            (pkgmgr::remove_script(manager), remove),
+        for (verb, script, packages) in [
+            ("installing", pkgmgr::install_script(manager), install),
+            ("removing", pkgmgr::remove_script(manager), remove),
         ] {
             if packages.is_empty() {
                 continue;
             }
+            logging::progress(&format!("{verb} {}", package_preview(&packages)));
             let command: Vec<String> = ["sh", "-c", &script, "_"]
                 .into_iter()
                 .map(String::from)
@@ -648,6 +650,15 @@ impl Service {
             let home_str = home.to_string_lossy();
             let policy = create_policy(manifest, &store.project_id)?;
             rollback.created = true;
+            logging::progress(&format!(
+                "{} '{name}' from {}",
+                if rollback.backup.is_some() {
+                    "recreating"
+                } else {
+                    "creating"
+                },
+                manifest.image
+            ));
             backend.create(&CreateRequest {
                 name,
                 image: &manifest.image,
@@ -675,6 +686,13 @@ impl Service {
                 max_output: Some(PROVISION_OUTPUT_LIMIT),
                 ..ExecOptions::default()
             };
+            if !manifest.run.is_empty() {
+                let count = manifest.run.len();
+                logging::progress(&format!(
+                    "running {count} post-install command{}",
+                    if count == 1 { "" } else { "s" }
+                ));
+            }
             for command in &manifest.run {
                 let argv = ["sh".to_string(), "-lc".to_string(), command.clone()];
                 backend.exec(name, &argv, &options)?;
@@ -767,6 +785,7 @@ impl Service {
         let _lock = store.lock(lock_timeout)?;
         let mut actions = Vec::new();
         if self.backend.container_exists(name)? {
+            logging::progress(&format!("removing '{name}'"));
             self.check_owner(
                 name,
                 &store.project_id,
@@ -797,6 +816,7 @@ impl Service {
         let store = ProjectStore::new(&manifest.path);
         self.assert_owned(&manifest, &store.project_id)?;
         let _lock = store.lock(DEFAULT_LOCK_TIMEOUT)?;
+        logging::progress(&format!("reading installed packages from '{name}'"));
         let script = pkgmgr::list_script(PackageManager::detect(&manifest.image));
         let command = ["sh".to_string(), "-c".to_string(), script];
         let output = self.backend.exec(name, &command, &ExecOptions::default())?;
@@ -881,6 +901,16 @@ impl Service {
         }
         store.clear()?;
         Ok(removed)
+    }
+}
+
+/// Short package list for progress lines.
+fn package_preview(packages: &[String]) -> String {
+    const MAX: usize = 6;
+    if packages.len() <= MAX {
+        packages.join(", ")
+    } else {
+        format!("{} packages", packages.len())
     }
 }
 

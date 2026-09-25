@@ -71,3 +71,170 @@ fn envelope_shape() {
     assert_eq!(error["ok"], false);
     assert_eq!(error["error"]["message"], "boom");
 }
+
+#[test]
+fn human_summaries() {
+    use crate::config::Profile;
+    use crate::service::PlannedAction;
+    use std::path::PathBuf;
+
+    let validation = Validation {
+        valid: true,
+        config_path: PathBuf::from("/tmp/archbox.yaml"),
+        name: "archbox".into(),
+        image: "docker.io/library/archlinux:latest".into(),
+        kind: "DesktopBox",
+        security_profile: Profile::Default,
+    };
+    assert_eq!(
+        render_validation(&validation),
+        "\
+archbox  valid
+  kind     DesktopBox
+  image    docker.io/library/archlinux:latest
+  profile  default
+  config   /tmp/archbox.yaml"
+    );
+
+    let plan = Plan {
+        project_id: "p".into(),
+        container: "archbox".into(),
+        config_path: PathBuf::from("/tmp/archbox.yaml"),
+        actions: vec![
+            PlannedAction {
+                action: Action::Create {
+                    image: "docker.io/library/archlinux:latest".into(),
+                },
+                destructive: false,
+            },
+            PlannedAction {
+                action: Action::RemovePackages {
+                    packages: vec!["vim".into()],
+                },
+                destructive: true,
+            },
+        ],
+        requires_force: true,
+        identity_digest: "abc".into(),
+    };
+    assert_eq!(
+        render_plan(&plan),
+        "\
+archbox  /tmp/archbox.yaml
+  create        docker.io/library/archlinux:latest
+  remove        vim  (destructive)
+
+Destructive actions need --force."
+    );
+
+    let status = Status {
+        project_id: "p".into(),
+        container: "archbox".into(),
+        config_path: PathBuf::from("/tmp/archbox.yaml"),
+        exists: true,
+        config_in_sync: true,
+        desired_packages: vec!["git".into()],
+        applied_packages: vec!["git".into()],
+        install: Vec::new(),
+        remove: Vec::new(),
+        image: "docker.io/library/archlinux:latest".into(),
+        image_digest: Some(
+            "sha256:f3691b4dde62ba4c4b6f0ae2c1fbf28e8c0c8c4b9a35c7e06dc1f70e21aa29f6".into(),
+        ),
+        security_profile: Profile::Default,
+        expires_at: None,
+    };
+    assert_eq!(
+        render_status(&status),
+        "\
+archbox
+  exists    yes
+  in sync   yes
+  image     docker.io/library/archlinux:latest
+  digest    sha256:f3691b4dde62...
+  profile   default
+  packages  git
+  install   none
+  remove    none
+  path      /tmp/archbox.yaml"
+    );
+
+    let listed = vec![BoxSummary {
+        project_id: "p".into(),
+        name: "archbox".into(),
+        config_path: PathBuf::from("/tmp/archbox.yaml"),
+        exists: true,
+        running: true,
+        image: "docker.io/library/archlinux:latest".into(),
+        image_digest: None,
+        security_profile: Profile::Default,
+        expires_at: None,
+    }];
+    assert_eq!(
+        render_list(&listed),
+        "\
+archbox  running
+  image    docker.io/library/archlinux:latest
+  profile  default
+  config   /tmp/archbox.yaml"
+    );
+    assert_eq!(render_list(&[]), "No managed boxes.");
+
+    let created = Operation {
+        operation_id: "secret".into(),
+        changed: true,
+        container: "archbox".into(),
+        actions: vec!["create", "sync_packages", "run_post_install"],
+        warnings: Vec::new(),
+    };
+    assert_eq!(
+        operation_summary("create", &created),
+        "'archbox': created the container, synced packages, ran post-install commands"
+    );
+    assert!(!operation_summary("create", &created).contains("secret"));
+    let idle = Operation {
+        changed: false,
+        actions: Vec::new(),
+        ..created
+    };
+    assert_eq!(
+        operation_summary("create", &idle),
+        "'archbox' is already up to date"
+    );
+    assert_eq!(
+        operation_summary("remove", &idle),
+        "'archbox' was already gone"
+    );
+
+    assert_eq!(render_export(&[]), "No new packages to add.");
+    assert_eq!(
+        render_export(&["git".into()]),
+        "Added 1 package to the manifest:\n  git"
+    );
+    assert_eq!(render_cleanup(&[]), "Nothing to clean up.");
+    assert_eq!(render_cleanup(&["oldbox".into()]), "Removed 1:\n  oldbox");
+
+    assert_eq!(
+        format_expiry_at(1_700_000_000.0, 1_800_000_000.0),
+        "2023-11-14T22:13:20Z (expired)"
+    );
+    assert_eq!(
+        format_expiry_at(1_800_000_000.0, 1_700_000_000.0),
+        "2027-01-15T08:00:00Z"
+    );
+    assert_eq!(
+        short_digest("sha256:f3691b4dde62ba4c"),
+        "sha256:f3691b4dde62..."
+    );
+
+    let exec = ExecResult {
+        container: "archbox".into(),
+        argv: vec!["true".into()],
+        exit_code: 1,
+        stdout: String::new(),
+        stderr: String::new(),
+        timed_out: false,
+        truncated: true,
+    };
+    assert_eq!(exec_notes(&exec), ["output truncated", "command exited 1"]);
+}

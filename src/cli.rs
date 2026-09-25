@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, Write};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, CommandFactory, Parser, Subcommand, error::ErrorKind};
@@ -10,8 +10,11 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::config::{Profile, StringMap};
-use crate::logging::{err, log, set_color_enabled, warn};
-use crate::service::{DEFAULT_LOCK_TIMEOUT, EnsureOptions, ExecRequest, Service};
+use crate::logging::{err, log, print, set_color_enabled, set_progress_enabled, warn, warn_stderr};
+use crate::service::{
+    Action, BoxSummary, DEFAULT_LOCK_TIMEOUT, EnsureOptions, ExecRequest, ExecResult, Operation,
+    Plan, Service, Status, Validation,
+};
 
 const AFTER_HELP: &str = "\
 Common workflows:
@@ -31,7 +34,7 @@ A TARGET can be a container name or its manifest path.";
     propagate_version = true
 )]
 pub struct Cli {
-    /// Print one machine-readable JSON document
+    /// Print one machine-readable JSON document instead of the human summary
     #[arg(long, global = true)]
     pub json: bool,
 
@@ -211,17 +214,23 @@ struct Output {
 }
 
 impl Output {
+    /// Machine-readable envelope. Human mode renders each result itself.
     fn emit(&self, data: impl Serialize) -> Result<()> {
         let value = serde_json::to_value(data)?;
-        let text = if self.json {
-            envelope(self.command, value, None)
-        } else {
-            serde_json::to_string_pretty(&value)?
-        };
+        let text = envelope(self.command, value, None);
         let mut stdout = std::io::stdout().lock();
         // A closed pipe (e.g. `| head`) is not an error.
         let _ = writeln!(stdout, "{text}");
         Ok(())
+    }
+
+    fn show(&self, data: &impl Serialize, human: impl FnOnce()) -> Result<()> {
+        if self.json {
+            self.emit(data)
+        } else {
+            human();
+            Ok(())
+        }
     }
 }
 
@@ -235,12 +244,285 @@ fn confirm(target: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Human summaries
+//
+// `--json` keeps the structs the MCP tools also return. The default path is
+// for a person watching a terminal.
+
+fn fields(title: &str, rows: &[(&str, &str)]) -> String {
+    let width = rows.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
+    let mut lines = Vec::with_capacity(rows.len() + 1);
+    if !title.is_empty() {
+        lines.push(title.to_string());
+    }
+    for (key, value) in rows {
+        lines.push(format!("  {key:<width$}  {value}"));
+    }
+    lines.join("\n")
+}
+
+fn join_or_none(items: &[String]) -> String {
+    if items.is_empty() {
+        "none".into()
+    } else {
+        items.join(", ")
+    }
+}
+
+fn short_digest(digest: &str) -> String {
+    let (prefix, hex) = digest.split_once(':').unwrap_or(("", digest));
+    let shown = if hex.len() > 12 {
+        format!("{}...", &hex[..12])
+    } else {
+        hex.to_string()
+    };
+    if prefix.is_empty() {
+        shown
+    } else {
+        format!("{prefix}:{shown}")
+    }
+}
+
+fn format_expiry(secs: f64) -> String {
+    format_expiry_at(secs, crate::state::unix_now())
+}
+
+fn format_expiry_at(secs: f64, now: f64) -> String {
+    let text = Duration::try_from_secs_f64(secs.max(0.0))
+        .map(|duration| {
+            humantime::format_rfc3339_seconds(SystemTime::UNIX_EPOCH + duration).to_string()
+        })
+        .unwrap_or_else(|_| secs.to_string());
+    if secs <= now {
+        format!("{text} (expired)")
+    } else {
+        text
+    }
+}
+
+fn render_validation(result: &Validation) -> String {
+    let config = result.config_path.display().to_string();
+    fields(
+        &format!("{}  valid", result.name),
+        &[
+            ("kind", result.kind),
+            ("image", result.image.as_str()),
+            ("profile", result.security_profile.as_str()),
+            ("config", config.as_str()),
+        ],
+    )
+}
+
+fn render_plan(plan: &Plan) -> String {
+    let mut lines = vec![format!(
+        "{}  {}",
+        plan.container,
+        plan.config_path.display()
+    )];
+    for planned in &plan.actions {
+        let mark = if planned.destructive {
+            "  (destructive)"
+        } else {
+            ""
+        };
+        let (verb, detail) = match &planned.action {
+            Action::Create { image } => ("create", image.clone()),
+            Action::Recreate { .. } => ("recreate", "container identity changed".into()),
+            Action::InstallPackages { packages } => ("install", packages.join(", ")),
+            Action::RemovePackages { packages } => ("remove", packages.join(", ")),
+            Action::RunPostInstall { count } => (
+                "post-install",
+                format!("{count} command{}", if *count == 1 { "" } else { "s" }),
+            ),
+        };
+        lines.push(format!("  {verb:<12}  {detail}{mark}"));
+    }
+    if plan.requires_force {
+        lines.push(String::new());
+        lines.push("Destructive actions need --force.".into());
+    }
+    lines.join("\n")
+}
+
+fn render_status(status: &Status) -> String {
+    let digest = status
+        .image_digest
+        .as_deref()
+        .map(short_digest)
+        .unwrap_or_else(|| "none".into());
+    let mut rows = vec![
+        (
+            "exists",
+            if status.exists { "yes" } else { "no" }.to_string(),
+        ),
+        (
+            "in sync",
+            if status.config_in_sync { "yes" } else { "no" }.to_string(),
+        ),
+        ("image", status.image.clone()),
+        ("digest", digest),
+        ("profile", status.security_profile.as_str().to_string()),
+        ("packages", join_or_none(&status.desired_packages)),
+        ("install", join_or_none(&status.install)),
+        ("remove", join_or_none(&status.remove)),
+    ];
+    if let Some(at) = status.expires_at {
+        rows.push(("expires", format_expiry(at)));
+    }
+    rows.push(("path", status.config_path.display().to_string()));
+    let borrowed: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    fields(&status.container, &borrowed)
+}
+
+fn runtime_status(summary: &BoxSummary) -> &'static str {
+    if !summary.exists {
+        "missing"
+    } else if summary.running {
+        "running"
+    } else {
+        "stopped"
+    }
+}
+
+fn render_list(boxes: &[BoxSummary]) -> String {
+    if boxes.is_empty() {
+        return "No managed boxes.".into();
+    }
+    boxes
+        .iter()
+        .map(|summary| {
+            let mut rows = vec![
+                ("image", summary.image.clone()),
+                ("profile", summary.security_profile.as_str().to_string()),
+                ("config", summary.config_path.display().to_string()),
+            ];
+            if let Some(at) = summary.expires_at {
+                rows.push(("expires", format_expiry(at)));
+            }
+            let borrowed: Vec<(&str, &str)> = rows
+                .iter()
+                .map(|(key, value)| (*key, value.as_str()))
+                .collect();
+            fields(
+                &format!("{}  {}", summary.name, runtime_status(summary)),
+                &borrowed,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn action_phrase(action: &str) -> String {
+    match action {
+        "create" => "created the container".into(),
+        "recreate" => "recreated the container".into(),
+        "sync_packages" => "synced packages".into(),
+        "run_post_install" => "ran post-install commands".into(),
+        "destroy" => "removed the container (home preserved)".into(),
+        other => other.replace('_', " "),
+    }
+}
+
+fn operation_summary(command: &str, operation: &Operation) -> String {
+    if operation.changed {
+        let summary = operation
+            .actions
+            .iter()
+            .copied()
+            .map(action_phrase)
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("'{}': {summary}", operation.container)
+    } else if command == "remove" {
+        format!("'{}' was already gone", operation.container)
+    } else {
+        format!("'{}' is already up to date", operation.container)
+    }
+}
+
+fn print_operation(command: &str, operation: &Operation) {
+    crate::logging::ok(&operation_summary(command, operation));
+    for warning in &operation.warnings {
+        warn(warning);
+    }
+}
+
+fn render_export(added: &[String]) -> String {
+    if added.is_empty() {
+        return "No new packages to add.".into();
+    }
+    let label = if added.len() == 1 {
+        "package"
+    } else {
+        "packages"
+    };
+    let mut lines = vec![format!("Added {} {label} to the manifest:", added.len())];
+    lines.extend(added.iter().map(|pkg| format!("  {pkg}")));
+    lines.join("\n")
+}
+
+fn render_cleanup(removed: &[String]) -> String {
+    if removed.is_empty() {
+        return "Nothing to clean up.".into();
+    }
+    let mut lines = vec![format!("Removed {}:", removed.len())];
+    lines.extend(removed.iter().map(|name| format!("  {name}")));
+    lines.join("\n")
+}
+
+fn exec_notes(result: &ExecResult) -> Vec<String> {
+    let mut notes = Vec::new();
+    if result.timed_out {
+        notes.push("command timed out".into());
+    }
+    if result.truncated {
+        notes.push("output truncated".into());
+    }
+    if result.exit_code != 0
+        && result.stdout.is_empty()
+        && result.stderr.is_empty()
+        && !result.timed_out
+    {
+        notes.push(format!("command exited {}", result.exit_code));
+    }
+    notes
+}
+
+fn write_stream(mut stream: impl Write, text: &str) {
+    let _ = stream.write_all(text.as_bytes());
+    let _ = stream.flush();
+}
+
+fn print_exec(result: &ExecResult) {
+    write_stream(std::io::stdout().lock(), &result.stdout);
+    write_stream(std::io::stderr().lock(), &result.stderr);
+    for note in exec_notes(result) {
+        warn_stderr(&note);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch
 
 fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
     match command {
-        Command::Validate { manifest } => out.emit(service.validate(manifest.as_deref())?)?,
-        Command::Plan { target } => out.emit(service.plan(target.as_deref())?)?,
+        Command::Validate { manifest } => {
+            let result = service.validate(manifest.as_deref())?;
+            out.show(&result, || print(&render_validation(&result)))?;
+        }
+        Command::Plan { target } => {
+            let plan = service.plan(target.as_deref())?;
+            out.show(&plan, || {
+                if plan.actions.is_empty() {
+                    crate::logging::ok(&format!("'{}' is already up to date", plan.container));
+                } else {
+                    print(&render_plan(&plan));
+                }
+            })?;
+        }
         Command::Create {
             target,
             force,
@@ -252,9 +534,13 @@ fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
                 recreate,
                 lock_timeout,
             };
-            out.emit(service.ensure(target.as_deref(), options)?)?;
+            let operation = service.ensure(target.as_deref(), options)?;
+            out.show(&operation, || print_operation("create", &operation))?;
         }
-        Command::Status { target } => out.emit(service.status(&target)?)?,
+        Command::Status { target } => {
+            let status = service.status(&target)?;
+            out.show(&status, || print(&render_status(&status)))?;
+        }
         Command::Exec(args) => {
             let argv = match args.shell {
                 Some(script) => vec!["sh".into(), "-lc".into(), script],
@@ -270,7 +556,11 @@ fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
             };
             let result = service.exec(&args.target, request)?;
             let code = result.exit_code;
-            out.emit(result)?;
+            if out.json {
+                out.emit(&result)?;
+            } else {
+                print_exec(&result);
+            }
             // Exit statuses are 0-255; signals are already mapped to 128+n.
             return Ok(u8::try_from(code).unwrap_or(1));
         }
@@ -280,8 +570,16 @@ fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
             }
             return enter(service, &target);
         }
-        Command::Export { target } => out.emit(json!({ "added": service.export(&target)? }))?,
-        Command::List => out.emit(service.list()?)?,
+        Command::Export { target } => {
+            let added = service.export(&target)?;
+            out.show(&json!({ "added": &added }), || {
+                print(&render_export(&added))
+            })?;
+        }
+        Command::List => {
+            let boxes = service.list()?;
+            out.show(&boxes, || print(&render_list(&boxes)))?;
+        }
         Command::Remove { target, force } => {
             if out.json && !force {
                 bail!("remove with --json requires --force");
@@ -290,9 +588,15 @@ fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
                 log("Aborted.");
                 return Ok(0);
             }
-            out.emit(service.destroy(&target, DEFAULT_LOCK_TIMEOUT)?)?;
+            let operation = service.destroy(&target, DEFAULT_LOCK_TIMEOUT)?;
+            out.show(&operation, || print_operation("remove", &operation))?;
         }
-        Command::Cleanup => out.emit(json!({ "removed": service.cleanup() }))?,
+        Command::Cleanup => {
+            let removed = service.cleanup();
+            out.show(&json!({ "removed": &removed }), || {
+                print(&render_cleanup(&removed));
+            })?;
+        }
     }
     Ok(0)
 }
@@ -351,6 +655,7 @@ pub fn main() -> ExitCode {
     };
 
     set_color_enabled(!(cli.no_color || cli.json || std::env::var_os("NO_COLOR").is_some()));
+    set_progress_enabled(!cli.json);
     let Some(command) = cli.command else {
         let _ = Cli::command().print_help();
         return ExitCode::SUCCESS;

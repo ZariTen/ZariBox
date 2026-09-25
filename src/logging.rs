@@ -11,9 +11,15 @@ const BOLD: &str = "\x1b[1m";
 const RST: &str = "\x1b[0m";
 
 static COLOR_ENABLED: AtomicBool = AtomicBool::new(true);
+/// Live step lines during a human CLI run. Off for `--json`, MCP, and tests.
+static PROGRESS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_color_enabled(enabled: bool) {
     COLOR_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn set_progress_enabled(enabled: bool) {
+    PROGRESS_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
 fn format(color: &str, label: &str, message: &str, tty: bool) -> String {
@@ -55,6 +61,26 @@ pub fn warn(message: &str) {
         message,
         std::io::stdout().is_terminal(),
     ));
+}
+
+/// Same as [`warn`], but on stderr so it cannot corrupt captured command output.
+pub fn warn_stderr(message: &str) {
+    let line = format(YLW, "  warn", message, std::io::stderr().is_terminal());
+    let mut stderr = std::io::stderr().lock();
+    let _ = writeln!(stderr, "{line}");
+    let _ = stderr.flush();
+}
+
+/// A step the user is waiting on. No-op unless [`set_progress_enabled`] was called.
+/// Written to stderr so a redirected summary stays machine-free of progress noise.
+pub fn progress(message: &str) {
+    if !PROGRESS_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let line = format(BLU, "[zaribox]", message, std::io::stderr().is_terminal());
+    let mut stderr = std::io::stderr().lock();
+    let _ = writeln!(stderr, "{line}");
+    let _ = stderr.flush();
 }
 
 pub fn err(message: &str) {
