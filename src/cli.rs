@@ -1,6 +1,7 @@
 //! Command-line interface.
 
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, SystemTime};
 
@@ -10,6 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::config::{Profile, StringMap};
+use crate::init::{self, AgentLang, BoxKind, InitOptions};
 use crate::logging::{err, log, print, set_color_enabled, set_progress_enabled, warn, warn_stderr};
 use crate::service::{
     Action, BoxSummary, DEFAULT_LOCK_TIMEOUT, EnsureOptions, ExecRequest, ExecResult, Operation,
@@ -18,6 +20,8 @@ use crate::service::{
 
 const AFTER_HELP: &str = "\
 Common workflows:
+  zaribox init --desktop          Scaffold a development box manifest
+  zaribox init --agent            Scaffold an AgentBox manifest
   zaribox create archbox.yaml     Create or update a box
   zaribox enter archbox           Open an interactive shell
   zaribox status archbox          Check its current state
@@ -48,6 +52,31 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Scaffold a desktop or AgentBox manifest from a template
+    #[command(
+        after_help = "Examples:\n  zaribox init --desktop\n  zaribox init --agent --lang python\n  zaribox init --agent --lang rust -o agent.yaml"
+    )]
+    Init {
+        /// Write a desktop/development box manifest (default when --agent is omitted)
+        #[arg(long, group = "kind")]
+        desktop: bool,
+        /// Write an AgentBox manifest
+        #[arg(long, group = "kind")]
+        agent: bool,
+        /// AgentBox language template
+        #[arg(long, value_enum, default_value_t = AgentLang::Python)]
+        lang: AgentLang,
+        /// Container name written into the manifest
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+        /// Overwrite an existing file
+        #[arg(long)]
+        force: bool,
+        /// Output path (default: ./devbox.yaml or ./agentbox.yaml)
+        #[arg(short = 'o', long = "output", value_name = "PATH")]
+        path: Option<String>,
+    },
+
     /// Check a manifest without changing anything
     #[command(after_help = "Example:\n  zaribox validate archbox.yaml")]
     Validate {
@@ -165,6 +194,7 @@ fn parse_env(raw: &str) -> Result<(String, String), String> {
 impl Command {
     fn name(&self) -> &'static str {
         match self {
+            Self::Init { .. } => "init",
             Self::Validate { .. } => "validate",
             Self::Plan { .. } => "plan",
             Self::Create { .. } => "create",
@@ -473,6 +503,26 @@ fn render_cleanup(removed: &[String]) -> String {
     lines.join("\n")
 }
 
+fn render_init(result: &init::InitResult) -> String {
+    let kind = match result.kind {
+        BoxKind::Desktop => "desktop",
+        BoxKind::Agent => "agent",
+    };
+    let status = if result.overwritten {
+        "overwrote"
+    } else {
+        "wrote"
+    };
+    fields(
+        &format!("{status}  {}", result.path.display()),
+        &[
+            ("kind", kind),
+            ("template", result.template.as_str()),
+            ("name", result.name.as_str()),
+        ],
+    )
+}
+
 fn exec_notes(result: &ExecResult) -> Vec<String> {
     let mut notes = Vec::new();
     if result.timed_out {
@@ -509,6 +559,31 @@ fn print_exec(result: &ExecResult) {
 
 fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
     match command {
+        Command::Init {
+            desktop,
+            agent,
+            lang,
+            name,
+            force,
+            path,
+        } => {
+            let _ = service;
+            let kind = if agent {
+                BoxKind::Agent
+            } else {
+                // --desktop or neither: desktop is the default scaffold.
+                let _ = desktop;
+                BoxKind::Desktop
+            };
+            let result = init::scaffold(InitOptions {
+                kind,
+                lang,
+                name,
+                force,
+                path: path.map(PathBuf::from),
+            })?;
+            out.show(&result, || print(&render_init(&result)))?;
+        }
         Command::Validate { manifest } => {
             let result = service.validate(manifest.as_deref())?;
             out.show(&result, || print(&render_validation(&result)))?;

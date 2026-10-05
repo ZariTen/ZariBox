@@ -238,3 +238,35 @@ archbox  running
     };
     assert_eq!(exec_notes(&exec), ["output truncated", "command exited 1"]);
 }
+
+#[test]
+fn init_arguments() {
+    let cli = parse(&[
+        "init", "--agent", "--lang", "node", "--name", "web", "-o", "box.yaml", "--force",
+    ])
+    .unwrap();
+    let Some(Command::Init {
+        desktop,
+        agent,
+        lang,
+        name,
+        force,
+        path,
+    }) = cli.command
+    else {
+        panic!()
+    };
+    assert!(!desktop && agent && force);
+    assert_eq!(lang, crate::init::AgentLang::Node);
+    assert_eq!(name.as_deref(), Some("web"));
+    assert_eq!(path.as_deref(), Some("box.yaml"));
+
+    let desktop = parse(&["init", "--desktop"]).unwrap();
+    let Some(Command::Init { desktop, agent, .. }) = desktop.command else {
+        panic!()
+    };
+    assert!(desktop && !agent);
+
+    // --desktop and --agent are mutually exclusive
+    assert!(parse(&["init", "--desktop", "--agent"]).is_err());
+}

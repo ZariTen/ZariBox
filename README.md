@@ -27,12 +27,26 @@ Run:
 ```
 
 ```bash
+zaribox init --desktop       # write ./devbox.yaml from the Arch template
 zaribox create devbox.yaml   # create or update the container
 zaribox enter devbox         # open a shell inside it
 zaribox status devbox        # inspect configuration and package state
 ```
 
 Run `zaribox` with no arguments for a concise overview, or `zaribox COMMAND --help` for detailed behavior, arguments, safety notes, and examples.
+
+### Scaffold a manifest
+
+`zaribox init` writes a curated manifest without creating a container. Existing files are left untouched unless you pass `--force`.
+
+```bash
+zaribox init --desktop                         # ./devbox.yaml (Arch Linux)
+zaribox init --agent                           # ./agentbox.yaml (Python AgentBox)
+zaribox init --agent --lang node --name web    # Node AgentBox named web
+zaribox init --agent --lang rust -o agent.yaml # Rust AgentBox at a custom path
+```
+
+Agent templates keep the hardened AgentBox defaults (restricted mounts, unprivileged user, resource limits, TTL). After scaffolding, continue with `validate` → `plan` → `create`.
 
 ### Declarative lifecycle
 
@@ -55,6 +69,7 @@ ZariBox uses Podman as its container runtime. Podman must be installed and avail
 
 | Command | Description |
 | --- | --- |
+| `zaribox init [--desktop|--agent]` | Scaffold a desktop or AgentBox manifest from a curated template. |
 | `zaribox validate [MANIFEST]` | Validate a manifest and report its resolved metadata without creating state. |
 | `zaribox plan [TARGET]` | Show deterministic reconciliation actions without changing anything. |
 | `zaribox create [TARGET]` | Create or update a container. Destructive changes require `--force`; use `--recreate` to rebuild it explicitly. |

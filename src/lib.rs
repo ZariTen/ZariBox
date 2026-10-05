@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod config;
 pub mod engine;
+pub mod init;
 pub mod logging;
 pub mod mcp;
 pub mod paths;
