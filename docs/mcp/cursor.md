@@ -15,7 +15,7 @@ zaribox create agentbox.yaml
 
 ## 2. MCP configuration
 
-Add a server entry (project `.cursor/mcp.json`, or your user MCP settings — Cursor's UI labels vary by version):
+Add a server entry (project `.cursor/mcp.json`, or your user MCP settings -- Cursor's UI labels vary by version):
 
 ```json
 {
@@ -50,6 +50,6 @@ Ensure `zaribox-mcp` is on the `PATH` that Cursor inherits (for example after `.
 
 ## 3. Use it
 
-After Cursor reloads MCP servers, the agent should see tools such as `zaribox_plan`, `zaribox_create`, and `zaribox_exec`. Prefer `validate` → `plan` → `create` before `exec`. Destructive reconciliation needs `allow_destructive=true`; removal needs `confirm=true`.
+After Cursor reloads MCP servers, the agent should see tools such as `zaribox_plan`, `zaribox_create`, and `zaribox_exec`. Prefer `validate` -> `plan` -> `create` before `exec`. Destructive reconciliation needs `allow_destructive=true`; removal needs `confirm=true`.
 
 Optional: raise the exec timeout ceiling with `ZARIBOX_MCP_MAX_TIMEOUT` (seconds; default 900) in the same `env` block.

@@ -379,19 +379,19 @@ pub fn render(report: &Report) -> String {
     let headline = if report.ok && warned == 0 {
         paint(
             crate::logging::ANSI_GRN,
-            "ZariBox doctor — all checks passed",
+            "ZariBox doctor -- all checks passed",
             colorize,
         )
     } else if report.ok {
         paint(
             crate::logging::ANSI_YLW,
-            &format!("ZariBox doctor — passed with {warned} warning(s)"),
+            &format!("ZariBox doctor -- passed with {warned} warning(s)"),
             colorize,
         )
     } else {
         paint(
             crate::logging::ANSI_RED,
-            &format!("ZariBox doctor — {failed} failed, {warned} warning(s)"),
+            &format!("ZariBox doctor -- {failed} failed, {warned} warning(s)"),
             colorize,
         )
     };
@@ -419,7 +419,7 @@ pub fn render(report: &Report) -> String {
             message = check.message
         ));
         if let Some(hint) = &check.hint {
-            lines.push(format!("          → {hint}"));
+            lines.push(format!("          -> {hint}"));
         }
     }
     lines.join("\n")

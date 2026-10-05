@@ -59,6 +59,6 @@ Restart Claude Desktop after saving the file.
 
 ## 3. Use it
 
-Claude should list tools such as `zaribox_status` and `zaribox_exec` for the configured root. Follow `validate` → `plan` → `create` before running work inside the box. The server will not expose interactive `enter`, desktop manifests, or host-home mounts.
+Claude should list tools such as `zaribox_status` and `zaribox_exec` for the configured root. Follow `validate` -> `plan` -> `create` before running work inside the box. The server will not expose interactive `enter`, desktop manifests, or host-home mounts.
 
 Optional: set `ZARIBOX_MCP_MAX_TIMEOUT` in `env` (seconds; default 900) if long builds need a higher ceiling.

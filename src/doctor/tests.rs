@@ -134,8 +134,8 @@ fn human_render_is_scannable() {
         cgroup_fs_present: Box::new(|| true),
     };
     let text = render(&run_with(&hooks));
-    assert!(text.contains("ZariBox doctor —"), "{text}");
+    assert!(text.contains("ZariBox doctor --"), "{text}");
     assert!(text.contains("[fail]"), "{text}");
     assert!(text.contains("Podman on PATH"), "{text}");
-    assert!(text.contains("→ "), "{text}");
+    assert!(text.contains("-> "), "{text}");
 }

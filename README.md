@@ -46,7 +46,7 @@ zaribox init --agent --lang node --name web    # Node AgentBox named web
 zaribox init --agent --lang rust -o agent.yaml # Rust AgentBox at a custom path
 ```
 
-Agent templates keep the hardened AgentBox defaults (restricted mounts, unprivileged user, resource limits, TTL). After scaffolding, continue with `validate` → `plan` → `create`.
+Agent templates keep the hardened AgentBox defaults (restricted mounts, unprivileged user, resource limits, TTL). After scaffolding, continue with `validate` -> `plan` -> `create`.
 
 ### Declarative lifecycle
 
@@ -69,7 +69,7 @@ ZariBox uses Podman as its container runtime. Podman must be installed and avail
 
 | Command | Description |
 | --- | --- |
-| `zaribox init [--desktop|--agent]` | Scaffold a desktop or AgentBox manifest from a curated template. |
+| `zaribox init [--desktop\|--agent]` | Scaffold a desktop or AgentBox manifest from a curated template. |
 | `zaribox validate [MANIFEST]` | Validate a manifest and report its resolved metadata without creating state. |
 | `zaribox plan [TARGET]` | Show deterministic reconciliation actions without changing anything. |
 | `zaribox create [TARGET]` | Create or update a container. Destructive changes require `--force`; use `--recreate` to rebuild it explicitly. |
@@ -162,7 +162,7 @@ zaribox status coding-agent --json
 zaribox remove coding-agent --force --json
 ```
 
-The recommended sequence is `validate` → `plan` → `create` → `exec`/`status` → `remove`. A plan reports whether creation needs destructive approval; pass `--force` only after reviewing those actions.
+The recommended sequence is `validate` -> `plan` -> `create` -> `exec`/`status` -> `remove`. A plan reports whether creation needs destructive approval; pass `--force` only after reviewing those actions.
 
 AgentBox can only mount paths inside the manifest's directory. Operators can allow additional host directories with the colon-separated `ZARIBOX_ALLOWED_MOUNT_ROOTS` environment variable. This prevents an agent from mounting arbitrary host paths such as the user's home directory.
 
@@ -212,7 +212,7 @@ The server exposes these tools:
 | `zaribox_remove` | Remove an AgentBox only when `confirm=true`; its dedicated home is preserved. |
 | `zaribox_cleanup` | Remove expired AgentBoxes under `ZARIBOX_MCP_ROOT` and clear stale operation leases; returns `{ "removed": [...] }`. |
 
-Each tool includes agent-readable descriptions of its parameters, result, limits, and safety requirements. The server instructions recommend the same `validate` → `plan` → `create` workflow as the CLI. Paths are restricted to `ZARIBOX_MCP_ROOT`, command output is capped at 1 MiB, and execution time is bounded by `ZARIBOX_MCP_MAX_TIMEOUT` (900 seconds by default).
+Each tool includes agent-readable descriptions of its parameters, result, limits, and safety requirements. The server instructions recommend the same `validate` -> `plan` -> `create` workflow as the CLI. Paths are restricted to `ZARIBOX_MCP_ROOT`, command output is capped at 1 MiB, and execution time is bounded by `ZARIBOX_MCP_MAX_TIMEOUT` (900 seconds by default).
 
 ## Install
 

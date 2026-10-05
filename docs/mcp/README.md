@@ -25,4 +25,4 @@ zaribox plan agentbox.yaml
 zaribox create agentbox.yaml      # add --force only if plan requires it
 ```
 
-Point the client's `ZARIBOX_MCP_ROOT` at that same absolute project path, then use the MCP tools (`zaribox_validate` → `zaribox_plan` → `zaribox_create` → `zaribox_exec`) instead of constructing shell commands. When boxes use `Metadata.TTL`, call `zaribox_cleanup` (or CLI `zaribox cleanup`) to remove expired AgentBoxes under that root.
+Point the client's `ZARIBOX_MCP_ROOT` at that same absolute project path, then use the MCP tools (`zaribox_validate` -> `zaribox_plan` -> `zaribox_create` -> `zaribox_exec`) instead of constructing shell commands. When boxes use `Metadata.TTL`, call `zaribox_cleanup` (or CLI `zaribox cleanup`) to remove expired AgentBoxes under that root.
