@@ -209,6 +209,7 @@ The server exposes these tools:
 | `zaribox_exec` | Run a bounded argument vector as the unprivileged AgentBox user and return structured output. |
 | `zaribox_list` | List AgentBoxes belonging to the configured project root. |
 | `zaribox_remove` | Remove an AgentBox only when `confirm=true`; its dedicated home is preserved. |
+| `zaribox_cleanup` | Remove expired AgentBoxes under `ZARIBOX_MCP_ROOT` and clear stale operation leases; returns `{ "removed": [...] }`. |
 
 Each tool includes agent-readable descriptions of its parameters, result, limits, and safety requirements. The server instructions recommend the same `validate` → `plan` → `create` workflow as the CLI. Paths are restricted to `ZARIBOX_MCP_ROOT`, command output is capped at 1 MiB, and execution time is bounded by `ZARIBOX_MCP_MAX_TIMEOUT` (900 seconds by default).
 

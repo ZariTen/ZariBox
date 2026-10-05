@@ -329,3 +329,30 @@ fn export_merges_packages() {
     assert!(status.install.is_empty());
     assert_eq!(status.applied_packages, ["base", "git", "vim"]);
 }
+
+#[test]
+fn cleanup_in_only_touches_agentboxes_under_root() {
+    let sandbox = Sandbox::new();
+    let outside = tempfile::tempdir().unwrap();
+    let inside = sandbox.manifest(
+        "inside.yaml",
+        "ApiVersion: zaribox.dev/v1\nKind: AgentBox\nMetadata:\n  Name: inside\n  TTL: 0\nRuntime:\n  Image: alpine\n",
+    );
+    let foreign = outside.path().join("foreign.yaml");
+    std::fs::write(
+        &foreign,
+        "ApiVersion: zaribox.dev/v1\nKind: AgentBox\nMetadata:\n  Name: foreign\n  TTL: 0\nRuntime:\n  Image: alpine\n",
+    )
+    .unwrap();
+    let (service, fake) = service();
+    service
+        .ensure(arg(&inside), EnsureOptions::default())
+        .unwrap();
+    service
+        .ensure(arg(&foreign), EnsureOptions::default())
+        .unwrap();
+    assert_eq!(service.cleanup_in(sandbox.dir.path()), ["inside"]);
+    assert!(!fake.borrow().containers.contains_key("inside"));
+    assert!(fake.borrow().containers.contains_key("foreign"));
+    assert_eq!(service.cleanup(), ["foreign"]);
+}

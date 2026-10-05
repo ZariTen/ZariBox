@@ -862,11 +862,25 @@ impl Service {
 
     /// Remove expired boxes and abandoned operation leases.
     pub fn cleanup(&self) -> Vec<String> {
+        self.cleanup_where(|_| true)
+    }
+
+    /// Like [`cleanup`], but only AgentBoxes whose manifests lie under `root`.
+    pub fn cleanup_in(&self, root: &Path) -> Vec<String> {
+        let root = paths::canonical(root);
+        self.cleanup_where(move |record| {
+            record.security_profile == Profile::Agent
+                && paths::canonical(&record.config_path).starts_with(&root)
+        })
+    }
+
+    fn cleanup_where(&self, include: impl Fn(&ProjectRecord) -> bool) -> Vec<String> {
         let now = state::unix_now();
         let mut removed = state::cleanup_expired_sessions(now);
         let expired = state::all_records()
             .into_iter()
-            .filter(|r| r.expires_at.is_some_and(|at| at <= now));
+            .filter(|r| r.expires_at.is_some_and(|at| at <= now))
+            .filter(include);
         for record in expired {
             let lock_timeout = Duration::from_millis(100);
             let outcome = if record.config_path.is_file() {

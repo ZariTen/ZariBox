@@ -28,7 +28,8 @@ const INSTRUCTIONS: &str = "Use zaribox_validate to check a manifest and zaribox
 changes, then zaribox_create to create or update the AgentBox. Use zaribox_status to inspect \
 state and zaribox_exec for bounded, non-interactive work. Destructive reconciliation requires \
 allow_destructive=true. Removal requires confirm=true and preserves the dedicated home \
-directory. Tools only accept versioned AgentBox manifests inside ZARIBOX_MCP_ROOT; desktop \
+directory. Use zaribox_cleanup to remove expired AgentBoxes under ZARIBOX_MCP_ROOT and \
+stale operation leases. Tools only accept versioned AgentBox manifests inside ZARIBOX_MCP_ROOT; desktop \
 boxes, host-home access, interactive shells, and root command execution are intentionally \
 unavailable. A target is either an AgentBox name or a manifest path inside the project root.";
 
@@ -181,6 +182,16 @@ const TOOLS: &[ToolSpec] = &[
         description: "List managed agent-profile boxes whose manifests are inside the project \
             root, with runtime state, image, digest, and expiry.",
         hints: (true, false, true, false),
+        schema: || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+    },
+    ToolSpec {
+        name: "zaribox_cleanup",
+        title: "Cleanup Expired AgentBoxes",
+        description: "Remove expired AgentBoxes whose manifests lie under ZARIBOX_MCP_ROOT, and \
+            clear stale operation leases. Matches CLI `zaribox cleanup` but never touches boxes \
+            outside the project root or desktop profiles. Preserves dedicated home directories. \
+            Returns `{ \"removed\": [names_or_lease_ids...] }` (empty when nothing was due).",
+        hints: (false, true, true, false),
         schema: || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     },
 ];
@@ -385,6 +396,11 @@ impl Tools {
                     .collect();
                 // Structured tool results must be objects.
                 json!({ "result": boxes })
+            }
+            "zaribox_cleanup" => {
+                let _: NoArgs = parse_args(args)?;
+                let removed = self.service.cleanup_in(&self.root);
+                json!({ "removed": removed })
             }
             other => bail!("unknown tool: {other}"),
         };

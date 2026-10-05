@@ -43,7 +43,7 @@ fn protocol_basics() {
     let list = tools
         .handle(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
         .unwrap();
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 7);
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 8);
     assert_eq!(
         tools.handle(r#"{"id":3,"method":"nope"}"#).unwrap()["error"]["code"],
         -32601
@@ -146,4 +146,72 @@ fn rejects_unsafe_requests() {
         let text = error_text(&call(&tools, name, args.clone()));
         assert!(text.contains(needle), "{name} {args}: {text}");
     }
+}
+
+#[test]
+fn cleanup_expired_agentboxes() {
+    let sandbox = Sandbox::new();
+    sandbox.manifest(
+        "agent.yaml",
+        "ApiVersion: zaribox.dev/v1\nKind: AgentBox\nMetadata:\n  TTL: 0\nRuntime:\n  Image: alpine\n",
+    );
+    let tools = tools(&sandbox);
+    let created = call(
+        &tools,
+        "zaribox_create",
+        json!({ "manifest": "agent.yaml" }),
+    );
+    assert_eq!(created["result"]["isError"], false, "{created}");
+
+    let cleaned = call(&tools, "zaribox_cleanup", json!({}));
+    assert_eq!(cleaned["result"]["isError"], false, "{cleaned}");
+    assert_eq!(
+        cleaned["result"]["structuredContent"]["removed"],
+        json!(["agent"])
+    );
+
+    let again = call(&tools, "zaribox_cleanup", json!({}));
+    assert_eq!(again["result"]["structuredContent"]["removed"], json!([]));
+    let list = call(&tools, "zaribox_list", json!({}));
+    assert_eq!(
+        list["result"]["structuredContent"]["result"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn cleanup_rejects_unknown_args_and_stays_in_root() {
+    let sandbox = Sandbox::new();
+    let tools = tools(&sandbox);
+    let text = error_text(&call(&tools, "zaribox_cleanup", json!({ "confirm": true })));
+    assert!(text.contains("invalid tool arguments"), "{text}");
+
+    // Expired AgentBox outside the MCP root must not be removed by zaribox_cleanup.
+    let outside = tempfile::tempdir().unwrap();
+    let foreign = outside.path().join("foreign.yaml");
+    std::fs::write(
+        &foreign,
+        "ApiVersion: zaribox.dev/v1\nKind: AgentBox\nMetadata:\n  Name: foreign\n  TTL: 0\nRuntime:\n  Image: alpine\n",
+    )
+    .unwrap();
+    tools
+        .service
+        .ensure(
+            Some(foreign.to_str().unwrap()),
+            crate::service::EnsureOptions::default(),
+        )
+        .unwrap();
+    let cleaned = call(&tools, "zaribox_cleanup", json!({}));
+    assert_eq!(cleaned["result"]["structuredContent"]["removed"], json!([]));
+    assert!(
+        tools
+            .service
+            .list()
+            .unwrap()
+            .iter()
+            .any(|b| b.name == "foreign")
+    );
 }
