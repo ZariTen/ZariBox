@@ -11,6 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::config::{Profile, StringMap};
+use crate::doctor;
 use crate::init::{self, AgentLang, BoxKind, InitOptions};
 use crate::logging::{err, log, print, set_color_enabled, set_progress_enabled, warn, warn_stderr};
 use crate::service::{
@@ -22,6 +23,7 @@ const AFTER_HELP: &str = "\
 Common workflows:
   zaribox init --desktop          Scaffold a development box manifest
   zaribox init --agent            Scaffold an AgentBox manifest
+  zaribox doctor                  Check Podman and host readiness
   zaribox create archbox.yaml     Create or update a box
   zaribox enter archbox           Open an interactive shell
   zaribox status archbox          Check its current state
@@ -146,6 +148,10 @@ pub enum Command {
         force: bool,
     },
 
+    /// Check Podman and host readiness without creating a box
+    #[command(after_help = "Example:\n  zaribox doctor\n  zaribox doctor --json")]
+    Doctor,
+
     /// Remove expired AgentBoxes and stale operation leases
     Cleanup,
 }
@@ -204,6 +210,7 @@ impl Command {
             Self::Export { .. } => "export",
             Self::List => "list",
             Self::Remove { .. } => "remove",
+            Self::Doctor => "doctor",
             Self::Cleanup => "cleanup",
         }
     }
@@ -523,6 +530,10 @@ fn render_init(result: &init::InitResult) -> String {
     )
 }
 
+fn render_doctor(report: &doctor::Report) -> String {
+    doctor::render(report)
+}
+
 fn exec_notes(result: &ExecResult) -> Vec<String> {
     let mut notes = Vec::new();
     if result.timed_out {
@@ -665,6 +676,11 @@ fn run(service: &Service, command: Command, out: &Output) -> Result<u8> {
             }
             let operation = service.destroy(&target, DEFAULT_LOCK_TIMEOUT)?;
             out.show(&operation, || print_operation("remove", &operation))?;
+        }
+        Command::Doctor => {
+            let report = doctor::run();
+            out.show(&report, || print(&render_doctor(&report)))?;
+            return Ok(if report.ok { 0 } else { 1 });
         }
         Command::Cleanup => {
             let removed = service.cleanup();

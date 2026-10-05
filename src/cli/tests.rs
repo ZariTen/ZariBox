@@ -270,3 +270,10 @@ fn init_arguments() {
     // --desktop and --agent are mutually exclusive
     assert!(parse(&["init", "--desktop", "--agent"]).is_err());
 }
+
+#[test]
+fn doctor_command() {
+    let cli = parse(&["doctor", "--json"]).unwrap();
+    assert!(cli.json);
+    assert!(matches!(cli.command, Some(Command::Doctor)));
+}

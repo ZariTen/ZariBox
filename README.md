@@ -79,6 +79,7 @@ ZariBox uses Podman as its container runtime. Podman must be installed and avail
 | `zaribox enter NAME` | Open an interactive shell inside a desktop container. |
 | `zaribox list` | List all managed containers recorded in ZariBox project state and their runtime state. |
 | `zaribox remove TARGET` | Destroy a container after confirmation. Use `--force` for non-interactive use; its home directory is preserved. |
+| `zaribox doctor` | Check Podman, state directory, and optional MCP root readiness without creating a box. |
 | `zaribox cleanup` | Remove expired AgentBoxes and stale operation leases. |
 
 The commands are shared where that is safe. Development boxes can use `enter` for an interactive shell; AgentBoxes reject interactive entry and instead use bounded, non-interactive `exec`. The MCP interface exposes the AgentBox-safe subset rather than the interactive desktop workflow.

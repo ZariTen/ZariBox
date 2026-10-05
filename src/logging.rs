@@ -22,6 +22,18 @@ pub fn set_progress_enabled(enabled: bool) {
     PROGRESS_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
+/// Whether human output should include ANSI colors on stdout.
+pub fn stdout_color() -> bool {
+    COLOR_ENABLED.load(Ordering::Relaxed) && std::io::stdout().is_terminal()
+}
+
+pub(crate) const ANSI_RED: &str = RED;
+pub(crate) const ANSI_GRN: &str = GRN;
+pub(crate) const ANSI_YLW: &str = YLW;
+pub(crate) const ANSI_BLU: &str = BLU;
+pub(crate) const ANSI_BOLD: &str = BOLD;
+pub(crate) const ANSI_RST: &str = RST;
+
 fn format(color: &str, label: &str, message: &str, tty: bool) -> String {
     if COLOR_ENABLED.load(Ordering::Relaxed) && tty {
         format!("{color}{BOLD}{label}{RST} {message}")
