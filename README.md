@@ -196,6 +196,8 @@ Example client configuration:
 }
 ```
 
+Client-specific recipes (Cursor, Claude Desktop), a short AgentBox hello-world, and a Nix-only launch variant live in [`docs/mcp/`](docs/mcp/).
+
 The server exposes these tools:
 
 | MCP tool | Purpose |
