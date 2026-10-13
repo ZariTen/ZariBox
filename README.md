@@ -109,7 +109,7 @@ Run:                  # optional, run as your user after install
 | `Packages` | Packages to install when the container is created or synced. |
 | `Run` | Shell commands executed as your user inside the container after package install. |
 
-The package manager is inferred from known image names. For unknown images ZariBox probes for a supported package manager inside the container instead of assuming apt. `export` reads the distro's list of *explicitly installed* packages, so packages pulled in as dependencies are not added to your config.
+Package installation supports Fedora (dnf), Ubuntu (apt), and Arch Linux (pacman). The package manager is inferred from those image names. For unknown images ZariBox probes for one of those three inside the container instead of assuming apt. `export` reads the distro's list of *explicitly installed* packages, so packages pulled in as dependencies are not added to your config.
 
 ### GUI applications
 

@@ -1,4 +1,6 @@
 //! Distribution package managers used to reconcile `Packages`.
+//!
+//! Only Fedora (dnf), Ubuntu (apt), and Arch Linux (pacman) are supported.
 
 /// Package manager inside a container image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6,23 +8,17 @@ pub enum PackageManager {
     Pacman,
     Apt,
     Dnf,
-    Zypper,
-    Apk,
-    Xbps,
 }
 
 impl PackageManager {
     /// Probe order when the image name does not identify the distribution.
-    pub const ALL: [Self; 6] = [
-        Self::Pacman,
-        Self::Apt,
-        Self::Dnf,
-        Self::Zypper,
-        Self::Apk,
-        Self::Xbps,
-    ];
+    pub const ALL: [Self; 3] = [Self::Pacman, Self::Apt, Self::Dnf];
 
     /// Infer the manager from the image name; `None` means probe at runtime.
+    ///
+    /// Only Fedora, Ubuntu, and Arch images are recognized. Other
+    /// distributions are not supported and fall through to a runtime probe
+    /// that only accepts these three package managers.
     pub fn detect(image: &str) -> Option<Self> {
         let lower = image.to_lowercase();
         let name = lower
@@ -30,13 +26,10 @@ impl PackageManager {
             .next()
             .and_then(|last| last.split([':', '@']).next())
             .unwrap_or_default();
-        let prefixes: [(&[&str], Self); 6] = [
-            (&["arch", "manjaro", "endeavour"], Self::Pacman),
-            (&["ubuntu", "debian", "pop", "mint"], Self::Apt),
-            (&["fedora", "centos", "rhel"], Self::Dnf),
-            (&["opensuse", "suse"], Self::Zypper),
-            (&["alpine"], Self::Apk),
-            (&["void"], Self::Xbps),
+        let prefixes: [(&[&str], Self); 3] = [
+            (&["arch"], Self::Pacman),
+            (&["ubuntu"], Self::Apt),
+            (&["fedora"], Self::Dnf),
         ];
         prefixes
             .into_iter()
@@ -49,9 +42,6 @@ impl PackageManager {
             Self::Pacman => "pacman",
             Self::Apt => "apt-get",
             Self::Dnf => "dnf",
-            Self::Zypper => "zypper",
-            Self::Apk => "apk",
-            Self::Xbps => "xbps-install",
         }
     }
 
@@ -61,9 +51,6 @@ impl PackageManager {
             Self::Pacman => r#"pacman -Syu --noconfirm "$@""#,
             Self::Apt => r#"apt-get install -y "$@""#,
             Self::Dnf => r#"dnf install -y "$@""#,
-            Self::Zypper => r#"zypper install -y "$@""#,
-            Self::Apk => r#"apk add "$@""#,
-            Self::Xbps => r#"xbps-install -y "$@""#,
         }
     }
 
@@ -72,9 +59,6 @@ impl PackageManager {
             Self::Pacman => r#"pacman -Rns --noconfirm "$@""#,
             Self::Apt => r#"apt-get remove -y "$@""#,
             Self::Dnf => r#"dnf remove -y "$@""#,
-            Self::Zypper => r#"zypper remove -y "$@""#,
-            Self::Apk => r#"apk del "$@""#,
-            Self::Xbps => r#"xbps-remove -y "$@""#,
         }
     }
 
@@ -84,9 +68,6 @@ impl PackageManager {
             Self::Pacman => "pacman -Qen",
             Self::Apt => "apt-mark showmanual",
             Self::Dnf => "dnf repoquery --userinstalled",
-            Self::Zypper => "zypper packages --userinstalled",
-            Self::Apk => "apk info -q",
-            Self::Xbps => "xbps-query -m",
         }
     }
 }

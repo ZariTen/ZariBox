@@ -5,9 +5,10 @@ fn detects_by_image_name() {
     use PackageManager::*;
     for (image, expected) in [
         ("docker.io/library/archlinux:latest", Some(Pacman)),
-        ("docker.io/library/debian:12", Some(Apt)),
+        ("docker.io/library/ubuntu:24.04", Some(Apt)),
         ("registry.fedoraproject.org/fedora:40", Some(Dnf)),
-        ("docker.io/library/alpine@sha256:abc", Some(Apk)),
+        ("docker.io/library/debian:12", None),
+        ("docker.io/library/alpine@sha256:abc", None),
         ("docker.io/library/python:3.12", None),
     ] {
         assert_eq!(PackageManager::detect(image), expected, "{image}");
@@ -16,7 +17,10 @@ fn detects_by_image_name() {
 
 #[test]
 fn scripts() {
-    assert_eq!(install_script(Some(PackageManager::Apk)), r#"apk add "$@""#);
+    assert_eq!(
+        install_script(Some(PackageManager::Dnf)),
+        r#"dnf install -y "$@""#
+    );
     let probe = install_script(None);
     assert!(probe.starts_with(
         r#"if command -v pacman >/dev/null 2>&1; then exec pacman -Syu --noconfirm "$@"; fi; "#
